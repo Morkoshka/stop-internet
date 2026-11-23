@@ -115,6 +115,12 @@ start, boot, wake-up from sleep or hibernation and user logon. Proxy mode
 survives a wake-up and a logon; a service start always begins in "tunnel
 only".
 
+The tray can choose between the two protected modes by itself: proxy mode
+while the system proxy of Windows points to this computer, as it does with
+Happ in system proxy mode, and "tunnel only" otherwise. It never selects
+"normal internet" and leaves it alone while it lasts. See
+[Tray icon and named pipe](#tray-icon-and-named-pipe).
+
 ## Policy
 
 `stopinet-core` builds an ordered list of abstract rules from the
@@ -289,6 +295,30 @@ administrator rights:
   between "tunnel only" and proxy mode directly, offers "normal internet"
   for each duration of the configuration, opens the service log and closes
   the icon. Closing the icon does not change the protection.
+- "Автоматически" in the menu, on by default, keeps the protected mode in
+  line with the system proxy of the user. While the manual proxy or the
+  proxy script of Windows points to a loopback address, the VPN client runs
+  in system proxy mode and the tray asks for proxy mode; otherwise it asks
+  for "tunnel only". Leaving the proxy on after a crash of the client is
+  safe: nothing listens on it, and the rest of the traffic stays blocked.
+  - The settings are read with `WinHttpGetIEProxyConfigForCurrentUser`,
+    which returns the proxy and the script only while they are turned on,
+    whenever something under
+    `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings`
+    changes (`RegNotifyChangeKeyValue`), as Chromium does. After each
+    status poll the mode is checked again, so it is right again after a
+    service start or the end of "normal internet".
+  - It is the tray and not the service, because the proxy is a setting of
+    the user, and the service, as LocalSystem, cannot tell whose setting
+    counts. It needs no new right: every client of the pipe may switch
+    between the protected modes.
+  - Choosing a protected mode by hand turns it off, choosing "normal
+    internet" does not. The choice is kept in `HKCU\Software\stop-internet`
+    (`FollowSystemProxy`), which `uninstall` leaves, like the
+    configuration. While it is on, a mode set with `stopinet mode tunnel`
+    or `proxy` is set back within a second.
+  - With several users signed in at once, each tray follows the proxy of
+    its own user; it should stay on for one of them only.
 - The menu opens with its left edge at the cursor and its bottom edge on
   the taskbar (beside it for a top or side taskbar, above the icon in the
   overflow area), so the taskbar never covers it. The cursor, the icon
@@ -348,7 +378,7 @@ Limits:
 | `stopinet-core` | library | configuration, policy model, mode selection with its timer, pipe protocol; no unsafe code, no system calls |
 | `stopinet-win` | library | WFP engine, persistent baseline, adapter lookup and notifications, named pipe, tray autostart; all unsafe code of the service and the CLI |
 | `stopinet-service` | LocalSystem service | WFP filters, tunnel, power and logon events, named pipe server |
-| `stopinet-tray` | user session | status icon, menu in Russian, mode switching; its window code is its own unsafe code |
+| `stopinet-tray` | user session | status icon, menu in Russian, mode switching, following the system proxy; its window and registry code is its own unsafe code |
 | `stopinet` | CLI | policy dry run, trial, install, uninstall, panic, status, mode |
 
 - The tray and the CLI talk to the service over a named pipe. Its security
@@ -389,7 +419,8 @@ Limits:
   plan (including "the persistent part is the same in every state"), the
   tunnel observation, the event loop of the service, the mode selection
   with its timer and resets, the pipe protocol, a round trip over a real
-  named pipe, and the icons and menu of the tray. They run in CI.
+  named pipe, the icons and menu of the tray, and how it reads the system
+  proxy and picks the mode from it. They run in CI.
 - Anything that installs filters or services is tested manually by the owner
   of the machine, following a written checklist
   ([`docs/testing.md`](testing.md)): capture traffic on the
@@ -419,7 +450,8 @@ Limits:
    named pipe.
 4. Windows service: persistent and boot-time filters, crash and power
    handling; `install`, `uninstall`, `panic`, `status`. **Done.**
-5. Tray icon, named pipe, mode switching, UAC and timed normal mode.
-   **Written**; the manual tests (part C of the checklist) are pending.
+5. Tray icon, named pipe, mode switching, UAC, timed normal mode and the
+   automatic choice by the system proxy. **Written**; part C of the manual
+   tests passed, part D (the automatic choice) is pending.
 6. Installer package and a recovery guide.
 7. Full test checklist, release builds.

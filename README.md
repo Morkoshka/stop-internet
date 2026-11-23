@@ -39,6 +39,9 @@ exactly when they are needed.
   its server.
 - A tray icon shows the state and switches modes; turning protection off
   needs a UAC prompt and is time-limited.
+- The tray picks the protected mode by itself: proxy mode while the system
+  proxy of Windows points to this computer (the VPN client in system proxy
+  mode), tunnel only otherwise. Choosing a mode by hand turns this off.
 
 ## Modes
 
@@ -99,7 +102,8 @@ filter in an emergency. `install` also sets the tray icon to start at every
 sign-in.
 
 Modes, from the tray menu or from a terminal; `normal` needs an elevated
-one:
+one. While "Автоматически" is on in the tray menu, the tray sets the
+protected mode back to the one that fits the system proxy:
 
 ```powershell
 stopinet mode proxy

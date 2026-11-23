@@ -7,8 +7,8 @@ machine. Unit tests cover the logic; these steps cover what only Windows can
 show. Each step says what it changes, how to undo it and what to expect.
 
 This page covers the Windows service (roadmap step 4) and the tray icon with
-mode switching (step 5). The full checklist with traffic captures comes with
-step 7.
+mode switching and the automatic choice of the mode (step 5). The full
+checklist with traffic captures comes with step 7.
 
 ## Before you start
 
@@ -94,3 +94,24 @@ elevated; they say so.
 | C13 | Menu: Журнал службы; then menu: Закрыть значок | The log opens in Notepad. Closing removes the icon only; `stopinet status` still shows the service running. Start the icon again with Win+R: `"C:\Program Files\stop-internet\stopinet-tray.exe"`. Starting it a second time adds no second icon. |
 | C14 | Optional: `stopinet uninstall`, then install again as in C1 | The icon disappears, "tray icon no longer starts at sign-in"; Task Manager no longer lists it under Startup apps. `install` brings back the service, the baseline and the icon. |
 | C15 | Settings, Personalization, Colors: switch "Choose your mode" between Dark and Light, open the tray menu after each switch | The menu follows the app theme: dark, then light. Switch back afterwards. |
+
+## D. Automatic choice of the mode
+
+"Автоматически" in the tray menu switches between tunnel-only and proxy mode
+by itself, following the system proxy of Windows. What Happ sets can be seen
+in Settings, Network & internet, Proxy: in system proxy mode "Use a proxy
+server" is on with a loopback address such as 127.0.0.1. Start with Happ
+connected in TUN mode. Choosing a mode in the menu turns "Автоматически"
+off; turn it on again before the next step.
+
+| # | Do | Expect |
+|---|---|---|
+| D1 | `cargo build --release`, then `.\target\release\stopinet.exe install`; open the tray menu | "Автоматически" has a check mark, the round mark is on "Только туннель", the shield is green. Nothing new is written: the setting appears in `HKCU\Software\stop-internet` only when it changes. |
+| D2 | In Happ, switch to system proxy mode (TUN off) | Within about 2 s the round mark moves to "Прокси", the shield is green, "открыт только прокси клиента"; sites load. Log: "mode Proxy asked". Between TUN off and the proxy on, the shield may turn red for a moment. |
+| D3 | In Happ, switch back to TUN | The mark returns to "Только туннель", the shield is green once the tunnel is up; log: "mode TunnelOnly asked". If the mark stays on "Прокси", Happ keeps the system proxy on in TUN mode as well: harmless, but worth noting. |
+| D4 | In system proxy mode, disconnect Happ; then connect again | "Только туннель", red, sites do not load; after the reconnect "Прокси" again. If the mark stays on "Прокси" after the disconnect, Happ left the system proxy on: still safe, nothing listens on it. |
+| D5 | Happ in system proxy mode. Menu: "Только туннель" | The check mark of "Автоматически" disappears, the mode stays "Только туннель", sites stop loading. In an ordinary PowerShell, `Get-ItemProperty HKCU:\Software\stop-internet` shows `FollowSystemProxy : 0`. Then menu: "Автоматически": the check mark is back, "Прокси" within a second, `FollowSystemProxy : 1`. Undo: `Remove-Item HKCU:\Software\stop-internet` removes the setting, which then counts as on. |
+| D6 | Happ in system proxy mode, "Автоматически" on. In the elevated window: `stopinet mode normal --minutes 1` | The shield stays grey for the whole minute: the tray leaves normal internet alone. Then the log shows "normal internet time is up" and, within about 2 s, "mode Proxy asked"; the shield is green. |
+| D7 | Happ in TUN mode, "Автоматически" on. In the elevated window: `stopinet mode proxy` | Within a second the tray sets "Только туннель" again; the log shows both requests. This is expected while "Автоматически" is on. |
+| D8 | Happ in system proxy mode. `Restart-Service stopinet` | The log shows a new start of the service in tunnel-only mode, and within about 2 s "mode Proxy asked". |
+| D9 | Menu: "Закрыть значок", start the icon again as in C13, open the menu | "Автоматически" is as it was. Turn it off, close the icon and start it again: still off. Turn it on at the end. |
