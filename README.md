@@ -6,8 +6,8 @@ Fail-closed kill switch for TUN-based VPN clients on Windows, built on the
 Windows Filtering Platform (WFP).
 
 > **Status:** early development. The firewall engine and the Windows service
-> work and passed the manual tests; the tray icon is next. Not ready for
-> daily use.
+> work and passed the manual tests; the tray icon and mode switching are
+> written and being tested by hand. Not ready for daily use.
 
 ## Why
 
@@ -42,9 +42,9 @@ exactly when they are needed.
 
 | Mode | Internet for applications | Icon |
 |---|---|---|
-| Tunnel only (default after every boot and wake-up) | only through the tunnel | green / red |
-| Proxy | through the tunnel or the VPN client's system proxy | green / red |
-| Normal internet (15 min, 1 h or until reboot) | unrestricted | grey |
+| Tunnel only (default after every boot, wake-up and sign-in) | only through the tunnel | green / red |
+| Proxy | through the tunnel or the VPN client's system proxy | green |
+| Normal internet (15 min, 1 h or until reboot, sleep or sign-in) | unrestricted | grey |
 
 ## How it works
 
@@ -53,7 +53,7 @@ flowchart LR
     Tray["stopinet-tray<br/>(user session)"] -- named pipe --> Svc["stopinet-service<br/>(LocalSystem)"]
     CLI["stopinet CLI"] -- named pipe --> Svc
     Svc -- "WFP filters" --> BFE["Base Filtering Engine"]
-    Win["Windows"] -- "adapter and power events" --> Svc
+    Win["Windows"] -- "adapter, power and logon events" --> Svc
 ```
 
 The service keeps a persistent baseline of WFP filters that blocks everything
@@ -93,16 +93,26 @@ before the first run):
 
 `--session-only` keeps nothing persistent and is meant for testing; without
 it the baseline survives reboots and service crashes. `panic` removes every
-filter in an emergency.
+filter in an emergency. `install` also sets the tray icon to start at every
+sign-in.
+
+Modes, from the tray menu or from a terminal; `normal` needs an elevated
+one:
+
+```powershell
+stopinet mode proxy
+stopinet mode normal --minutes 15
+stopinet mode tunnel
+```
 
 ## Repository layout
 
 | Path | Content |
 |---|---|
-| `crates/stopinet-core` | configuration and policy model |
-| `crates/stopinet-win` | WFP engine, persistent baseline, tunnel adapter lookup |
+| `crates/stopinet-core` | configuration, policy model, modes, pipe protocol |
+| `crates/stopinet-win` | WFP engine, persistent baseline, tunnel adapter lookup, named pipe |
 | `crates/stopinet-service` | Windows service |
-| `crates/stopinet-tray` | tray icon (planned) |
+| `crates/stopinet-tray` | tray icon |
 | `crates/stopinet-cli` | `stopinet` command-line tool |
 | `config/` | example configuration |
 | `docs/` | design, manual tests |
@@ -115,7 +125,7 @@ filter in an emergency.
 - [x] WFP engine and CLI with automatic rollback
 - [x] Tunnel monitor
 - [x] Windows service: persistent and boot-time filters
-- [ ] Tray icon, mode switching, UAC, timed normal mode
+- [ ] Tray icon, mode switching, UAC, timed normal mode (implemented, testing)
 - [ ] Installer package and recovery guide
 - [ ] Test checklist and releases
 

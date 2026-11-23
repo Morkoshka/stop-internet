@@ -36,7 +36,7 @@ stop-internet protects against:
   tunnel;
 - the VPN client, its core or stop-internet crashing;
 - forgetting that protection is off: "normal internet" is time-limited and
-  every boot and wake-up returns to the protected mode.
+  every boot, wake-up and user logon returns to the protected mode.
 
 It does not protect against:
 
@@ -87,17 +87,22 @@ subscription server and the update checks of Happ.
 | Mode | Applications | VPN client on the physical adapter | Tray icon |
 |---|---|---|---|
 | Tunnel only (default) | through the tunnel | tunnel daemon, only while the tunnel is up | green / red |
-| Proxy | through the tunnel or the client's local proxy | tunnel daemon while the tunnel is up; proxy core always | green / red |
+| Proxy | through the tunnel or the client's local proxy | tunnel daemon while the tunnel is up; proxy core always | green |
 | Normal internet | anything | anything | grey |
 
 In every protected mode, applications from the `direct` list may use the
 physical adapter (see [Excluded apps](#excluded-apps-when-the-tunnel-drops)),
-and loopback, DHCP and IPv6 neighbor discovery are allowed.
+and loopback, DHCP and IPv6 neighbor discovery are allowed. In proxy mode
+the icon stays green with the tunnel down too: the proxy core may go out
+directly either way, and whether it runs is not checked.
 
-"Normal internet" lowers protection, so switching to it needs a UAC prompt
-and lasts 15 minutes, an hour or until reboot. The protected mode returns on
-every service start, boot (including Fast Startup) and wake-up from sleep or
-hibernation.
+"Normal internet" lowers protection, so switching to it needs an elevated
+administrator, which the tray gets through a UAC prompt. It lasts as long as
+chosen from `normal_mode.durations_min` (15 minutes, an hour or until reboot
+by default) and then returns to "tunnel only". It also ends on every service
+start, boot, wake-up from sleep or hibernation and user logon. Proxy mode
+survives a wake-up and a logon; a service start always begins in "tunnel
+only".
 
 ## Policy
 
@@ -180,11 +185,18 @@ every mode and state.
   from sleep or hibernation, "normal internet" ends and the tunnel is
   checked again. The protected modes stay as they were. In the manual tests
   a shutdown and power-on with Fast Startup enabled started the service
-  anew, which ends "normal internet" as well. Step 5 will also end it when a
-  user logs on, so that a boot that resumes the service is covered too.
+  anew, which ends "normal internet" as well.
+- **User logon.** On `WTS_SESSION_LOGON` "normal internet" ends too. This
+  covers a power-on with Fast Startup that resumes the service instead of
+  starting it, and a sign-in after a sign-out or a switch of users.
+- **Mode change.** A client asks over the named pipe (see
+  [Tray icon and named pipe](#tray-icon-and-named-pipe)). The service
+  carries out the request in its main loop and answers only when the new
+  rules are in place. A timed "normal internet" is checked with the tunnel,
+  every 2 seconds, so it ends at most that much late.
 - **Switching to a protected mode.** Adding filters at ALE layers makes
   Windows re-authorize existing connections, so direct connections opened in
-  normal mode are cut. To be verified by tests.
+  normal mode are cut. Step C8 of the manual tests checks this.
 - **Service stop or crash.** The dynamic session closes, session rules
   disappear, the baseline stays. After a crash or a failed start the service
   control manager restarts the service after 5, 10 and 30 seconds; the
@@ -199,6 +211,84 @@ every mode and state.
   the baseline included, in its dynamic session, like a trial without a time
   limit. Stopping the service removes every filter. It is meant for the first
   tests of the service on a real machine.
+
+## Tray icon and named pipe
+
+```mermaid
+sequenceDiagram
+    participant T as stopinet-tray (user)
+    participant E as stopinet-tray, elevated
+    participant S as stopinet-service
+    loop every second
+        T->>S: status
+        S-->>T: ok mode=tunnel tunnel=up left=- durations=15,60,0
+    end
+    T->>S: mode proxy
+    S-->>T: ok mode=proxy ...
+    T->>E: start through a UAC prompt
+    E->>S: mode normal 15
+    S-->>E: ok mode=normal ... left=900
+```
+
+**Named pipe.** `\\.\pipe\stopinet` belongs to the service:
+
+- It is created with `FILE_FLAG_FIRST_PIPE_INSTANCE` and a limit of one
+  instance, so no other process can serve the name while the service runs.
+  Clients also check that the pipe belongs to the process of the running
+  service (`GetNamedPipeServerProcessId` against the service manager).
+- The security descriptor gives full access to SYSTEM and Administrators.
+  Interactive users may read and write, but not create pipe instances
+  (`FILE_CREATE_PIPE_INSTANCE` is part of `GENERIC_WRITE`, so they get
+  `0x12019b` instead). Remote clients are rejected.
+- Clients connect at the identification level. That lets the service read
+  the client's token, but not act as the client.
+- "Normal internet" is accepted only if the Administrators group is enabled
+  in the client token: an elevated administrator or LocalSystem. In the
+  filtered token of an administrator without UAC elevation the group is for
+  deny only and does not count. Every other request is open to every
+  client, since it keeps or raises protection.
+- A connection carries one request line and one response line, each with a
+  time limit, so a client that hangs blocks others for a few seconds at
+  most. If the pipe cannot be created, the service logs it and keeps
+  protecting.
+
+| Request | Answer |
+|---|---|
+| `status` | `ok mode=<tunnel\|proxy\|normal> tunnel=<up\|down> left=<seconds\|reset\|-> durations=<minutes,...>` |
+| `mode tunnel`, `mode proxy` | the same state line after the change |
+| `mode normal <minutes>` | the same, or `refused not-elevated`; `0` minutes means until the next reboot, wake-up or logon |
+| anything else | `refused bad-request` |
+
+`refused unavailable` means the service did not carry out the request in
+time, for example because it is stopping. Clients ignore keys they do not
+know, so a newer service does not break an older tray.
+
+**Tray icon.** `stopinet-tray.exe` runs in the session of the user, without
+administrator rights:
+
+- It asks the service for its state once a second and shows it as the color
+  of the icon and in the tooltip. When the service cannot be asked, the icon
+  is red and the tooltip says why: not installed, stopped, an older version
+  without the pipe, or the pipe held by another program.
+- The menu, in Russian, shows the state, switches between "tunnel only" and
+  proxy mode directly, offers "normal internet" for each duration of the
+  configuration, opens the service log and closes the icon. Closing the icon
+  does not change the protection.
+- For "normal internet" the tray starts itself again through a UAC prompt,
+  as `stopinet-tray.exe --normal <minutes>`. That instance only sends the
+  request and shows a message if it fails. It is the tray and not
+  `stopinet.exe`, so that no console window opens.
+- There are no notifications: the state is in the icon, and with "do not
+  disturb" on they would go unseen anyway. They can be added later.
+- `stopinet install` adds the tray to
+  `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`, so it starts at every
+  sign-in of every user, and starts it in the current session through
+  Explorer, which runs without elevation. The entry can be turned off in Task
+  Manager under Startup apps. `install` and `uninstall` close running icons
+  first, because a running program cannot be replaced or deleted.
+- One icon per session (a mutex in the `Local\` namespace). The icon comes
+  back when Explorer restarts (`TaskbarCreated`). The icons are drawn in
+  code, so the repository holds no images.
 
 ## Excluded apps when the tunnel drops
 
@@ -229,18 +319,20 @@ Limits:
 
 | Component | Runs as | Role |
 |---|---|---|
-| `stopinet-core` | library | configuration, policy model; no unsafe code, no system calls |
-| `stopinet-win` | library | WFP engine, persistent baseline, adapter lookup and notifications; all unsafe code |
-| `stopinet-service` | LocalSystem service | WFP filters, tunnel and power events, named pipe server (planned) |
-| `stopinet-tray` | user session | status icon, menu in Russian, notifications (planned) |
-| `stopinet` | CLI | policy dry run, trial, install, uninstall, panic, status; mode (planned) |
+| `stopinet-core` | library | configuration, policy model, mode selection with its timer, pipe protocol; no unsafe code, no system calls |
+| `stopinet-win` | library | WFP engine, persistent baseline, adapter lookup and notifications, named pipe, tray autostart; all unsafe code of the service and the CLI |
+| `stopinet-service` | LocalSystem service | WFP filters, tunnel, power and logon events, named pipe server |
+| `stopinet-tray` | user session | status icon, menu in Russian, mode switching; its window code is its own unsafe code |
+| `stopinet` | CLI | policy dry run, trial, install, uninstall, panic, status, mode |
 
 - The tray and the CLI talk to the service over a named pipe. Its security
   descriptor admits SYSTEM, Administrators and the interactive user.
   Requests that lower protection need an elevated client token, which the
-  tray obtains with a UAC prompt.
+  tray obtains with a UAC prompt. See
+  [Tray icon and named pipe](#tray-icon-and-named-pipe).
 - The programs live in `%ProgramFiles%\stop-internet`, so only
-  administrators can replace the binary of a LocalSystem service.
+  administrators can replace the binary of a LocalSystem service, or the
+  tray that every user starts at sign-in.
 - The configuration lives in `%ProgramData%\stop-internet\config.toml`. The
   folder gets its own permissions: full control for SYSTEM and
   Administrators, read for Users, nothing inherited from `ProgramData`.
@@ -269,7 +361,9 @@ Limits:
 
 - Unit tests cover the configuration, the policy invariants, the filter
   plan (including "the persistent part is the same in every state"), the
-  tunnel observation and the event loop of the service. They run in CI.
+  tunnel observation, the event loop of the service, the mode selection
+  with its timer and resets, the pipe protocol, a round trip over a real
+  named pipe, and the icons and menu of the tray. They run in CI.
 - Anything that installs filters or services is tested manually by the owner
   of the machine, following a written checklist
   ([`docs/testing.md`](testing.md)): capture traffic on the
@@ -300,5 +394,6 @@ Limits:
 4. Windows service: persistent and boot-time filters, crash and power
    handling; `install`, `uninstall`, `panic`, `status`. **Done.**
 5. Tray icon, named pipe, mode switching, UAC and timed normal mode.
+   **Written**; the manual tests (part C of the checklist) are pending.
 6. Installer package and a recovery guide.
 7. Full test checklist, release builds.
