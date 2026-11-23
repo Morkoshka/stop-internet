@@ -1,0 +1,5 @@
+/target
+
+# Local configuration and diagnostics output must never be committed.
+/config/*.local.toml
+stopinet-diag-*.txt
