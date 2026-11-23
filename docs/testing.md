@@ -62,7 +62,7 @@ machine without stop-internet filters.
 |---|---|---|
 | B1 | `stopinet install` (keeps the installed configuration) | "service running". `stopinet status`: provider and sublayer "persistent", some persistent filters, the same number of boot-time copies (or 0 and a note in the log), session filters on top. Undo: `stopinet panic` or `stopinet uninstall`. |
 | B2 | **Escape hatch first:** `stopinet panic`, then `stopinet status` | No provider, no sublayer, 0 filters; internet unrestricted. `Start-Service stopinet` returns to the state of B1. Do not go on unless this works. |
-| B3 | `Stop-Service stopinet` | Internet blocked, Happ connected or not, except the apps in `direct`. `stopinet status`: persistent filters stay, 0 session. `Start-Service stopinet` restores the internet through the tunnel. |
+| B3 | `Stop-Service stopinet` | Internet blocked, Happ connected or not. Apps in `direct` keep working only while Happ is disconnected: a connected Happ carries them through `happd.exe`, which is blocked now. `stopinet status`: persistent filters stay, 0 session. `Start-Service stopinet` restores the internet through the tunnel. |
 | B4 | `Stop-Process -Name stopinet-service -Force` | Blocked for about 5 s, then the service runs again and the tunnel works. |
 | B5 | Disconnect Happ; run `Resolve-DnsName example.com -DnsOnly` | The name does not resolve and sites do not load while the tunnel is down; an app from `direct` keeps its connections. Connect again: everything works. |
 | B6 | Sleep, wake up | As A6; nothing passes before the tunnel is back. |

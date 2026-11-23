@@ -216,6 +216,11 @@ Limits:
   connections but cannot resolve new names until the tunnel returns.
 - A game may depend on its platform client (for example Steam) for its
   session. Such a client has to be in the `direct` list too.
+- While Happ is connected, it carries excluded apps through `happd.exe` and
+  its user-space network stack. So they lose the network when the service
+  stops while the tunnel is up (`happd.exe` is permitted only by session
+  rules), and their ping is higher than with Happ disconnected. The WFP
+  filters of stop-internet work in the kernel and add no noticeable delay.
 
 ## Components
 
