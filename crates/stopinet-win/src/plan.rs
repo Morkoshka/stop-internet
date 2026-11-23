@@ -6,7 +6,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use stopinet_core::policy::{Action, Matcher, Policy, Rule};
+use stopinet_core::policy::{Action, Matcher, Policy, Rule, Scope};
 
 /// `FWP_CONDITION_FLAG_IS_LOOPBACK`.
 pub const LOOPBACK_FLAG: u32 = 0x1;
@@ -58,7 +58,8 @@ impl Layer {
         Self::RecvAcceptV4,
         Self::RecvAcceptV6,
     ];
-    const ALL: [Self; 6] = [
+    /// Every layer stop-internet uses.
+    pub const ALL: [Self; 6] = [
         Self::ConnectV4,
         Self::ConnectV6,
         Self::RecvAcceptV4,
@@ -157,6 +158,8 @@ pub struct FilterSpec {
     pub action: Action,
     /// Weight inside the sublayer; the higher, the earlier evaluated.
     pub weight: u64,
+    /// Lifetime of the rule the filter comes from.
+    pub scope: Scope,
     /// Conditions; an empty list matches all traffic of the layer.
     pub conditions: Vec<Condition>,
 }
@@ -178,13 +181,22 @@ pub struct Environment {
     pub tunnel_luid: Option<u64>,
 }
 
+/// A rule that could not become filters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Skipped {
+    /// Lifetime of the rule.
+    pub scope: Scope,
+    /// Why it was left out.
+    pub reason: String,
+}
+
 /// Filters for one policy.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Plan {
     /// Filters to add.
     pub filters: Vec<FilterSpec>,
-    /// Rules that could not become filters, with the reason.
-    pub skipped: Vec<String>,
+    /// Rules that could not become filters.
+    pub skipped: Vec<Skipped>,
 }
 
 impl Plan {
@@ -201,6 +213,26 @@ impl Plan {
         plan
     }
 
+    /// The part of the plan with rules of one scope: the persistent baseline
+    /// or the session rules on top of it. Weights stay as they are, so both
+    /// parts can live in one sublayer.
+    pub fn only(&self, scope: Scope) -> Self {
+        Self {
+            filters: self
+                .filters
+                .iter()
+                .filter(|f| f.scope == scope)
+                .cloned()
+                .collect(),
+            skipped: self
+                .skipped
+                .iter()
+                .filter(|s| s.scope == scope)
+                .cloned()
+                .collect(),
+        }
+    }
+
     fn add_rule(&mut self, rule: &Rule, weight: u64, env: &Environment) {
         let mut add = |layers: &[Layer], conditions: &dyn Fn(Layer) -> Vec<Condition>| {
             for &layer in layers {
@@ -209,6 +241,7 @@ impl Plan {
                     layer,
                     action: rule.action,
                     weight,
+                    scope: rule.scope,
                     conditions: conditions(layer),
                 });
             }
@@ -241,9 +274,10 @@ impl Plan {
                 Some(luid) => add(&Layer::ALE, &|_| {
                     vec![Condition::equal(Field::LocalInterface, Value::U64(luid))]
                 }),
-                None => self
-                    .skipped
-                    .push(format!("tunnel adapter \"{name}\" is not available")),
+                None => self.skipped.push(Skipped {
+                    scope: rule.scope,
+                    reason: format!("tunnel adapter \"{name}\" is not available"),
+                }),
             },
             Matcher::App(path) => add(&Layer::ALE, &|_| {
                 vec![Condition::equal(Field::AppId, Value::AppPath(path.clone()))]
@@ -421,6 +455,45 @@ allow_lan = {allow_lan}
             .collect();
         assert_eq!(ndp.len(), 2);
         assert!(ndp.iter().all(|f| f.layer.is_v6()));
+    }
+
+    #[test]
+    fn persistent_filters_are_the_same_in_every_state() {
+        let env = Environment {
+            tunnel_luid: Some(LUID),
+        };
+        let reference = plan(Mode::TunnelOnly, TunnelState::Down, env).only(Scope::Persistent);
+        assert!(!reference.filters.is_empty());
+        for mode in Mode::ALL {
+            for state in TunnelState::ALL {
+                let persistent = plan(mode, state, env).only(Scope::Persistent);
+                assert_eq!(persistent, reference, "{mode:?} / {state:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn session_filters_outweigh_the_baseline() {
+        let env = Environment {
+            tunnel_luid: Some(LUID),
+        };
+        let plan = plan(Mode::TunnelOnly, TunnelState::Up, env);
+        let session = plan.only(Scope::Session);
+        let persistent = plan.only(Scope::Persistent);
+        assert_eq!(
+            session.filters.len() + persistent.filters.len(),
+            plan.filters.len()
+        );
+        let lowest_session = session.filters.iter().map(|f| f.weight).min().unwrap();
+        let highest_persistent = persistent.filters.iter().map(|f| f.weight).max().unwrap();
+        assert!(lowest_session > highest_persistent);
+    }
+
+    #[test]
+    fn unavailable_tunnel_is_a_session_skip() {
+        let plan = plan(Mode::TunnelOnly, TunnelState::Up, Environment::default());
+        assert_eq!(plan.only(Scope::Session).skipped.len(), 1);
+        assert!(plan.only(Scope::Persistent).skipped.is_empty());
     }
 
     #[test]
