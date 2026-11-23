@@ -177,8 +177,11 @@ every mode and state.
   when an adapter with the configured alias and driver exists and is
   operational.
 - **Sleep and wake-up.** On `PBT_APMRESUMEAUTOMATIC`, sent on every wake-up
-  and on a boot with Fast Startup, "normal internet" ends and the tunnel is
-  checked again. The protected modes stay as they were.
+  from sleep or hibernation, "normal internet" ends and the tunnel is
+  checked again. The protected modes stay as they were. In the manual tests
+  a shutdown and power-on with Fast Startup enabled started the service
+  anew, which ends "normal internet" as well. Step 5 will also end it when a
+  user logs on, so that a boot that resumes the service is covered too.
 - **Switching to a protected mode.** Adding filters at ALE layers makes
   Windows re-authorize existing connections, so direct connections opened in
   normal mode are cut. To be verified by tests.
@@ -295,8 +298,7 @@ Limits:
 3. Tunnel monitor. **Done.** Mode switching moved to step 5, it needs the
    named pipe.
 4. Windows service: persistent and boot-time filters, crash and power
-   handling; `install`, `uninstall`, `panic`, `status`. **Implemented,
-   manual tests in progress.**
+   handling; `install`, `uninstall`, `panic`, `status`. **Done.**
 5. Tray icon, named pipe, mode switching, UAC and timed normal mode.
 6. Installer package and a recovery guide.
 7. Full test checklist, release builds.

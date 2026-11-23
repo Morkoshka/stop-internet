@@ -6,8 +6,8 @@ Fail-closed kill switch for TUN-based VPN clients on Windows, built on the
 Windows Filtering Platform (WFP).
 
 > **Status:** early development. The firewall engine and the Windows service
-> are implemented and being tested by hand; the tray icon is next. Not ready
-> for daily use.
+> work and passed the manual tests; the tray icon is next. Not ready for
+> daily use.
 
 ## Why
 
@@ -114,7 +114,7 @@ filter in an emergency.
 - [x] Design, configuration, policy model
 - [x] WFP engine and CLI with automatic rollback
 - [x] Tunnel monitor
-- [ ] Windows service: persistent and boot-time filters (implemented, testing)
+- [x] Windows service: persistent and boot-time filters
 - [ ] Tray icon, mode switching, UAC, timed normal mode
 - [ ] Installer package and recovery guide
 - [ ] Test checklist and releases
