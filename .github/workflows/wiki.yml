@@ -25,7 +25,7 @@ jobs:
       # Pushing to <repo>.wiki.git needs write access to the contents.
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Publish docs/ to the wiki
         env:
