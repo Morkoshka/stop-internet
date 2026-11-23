@@ -2,14 +2,13 @@
 //!
 //! Runs as LocalSystem, started automatically at boot. It installs the
 //! persistent baseline of WFP filters, follows the tunnel adapter and keeps
-//! the session rules on top of the baseline. On wake-up "normal internet"
-//! ends. See `docs/design.md`.
+//! the session rules on top of the baseline. The tray icon and the CLI
+//! switch modes over a named pipe. "Normal internet" ends when its time is
+//! up, on wake-up and when a user logs on. See `docs/design.md`.
 //!
 //! The binary takes one optional argument, `--session-only`, set by
 //! `stopinet install --session-only`: nothing persistent is installed, so
 //! stopping the service removes every filter. It is meant for testing.
-//!
-//! Still to come: the named pipe for the tray icon and the CLI.
 
 mod log;
 mod run;
@@ -23,7 +22,7 @@ use stopinet_core::config::{DEFAULT_PATH, LOG_PATH};
 use stopinet_core::{SERVICE_NAME, SESSION_ONLY_ARG};
 use windows_service::service::{
     PowerEventParam, ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState,
-    ServiceStatus, ServiceType,
+    ServiceStatus, ServiceType, SessionChangeReason,
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
 use windows_service::{define_windows_service, service_dispatcher};
@@ -102,9 +101,17 @@ fn serve(options: &Options, log: &mut Log) -> Result<(), String> {
             let _ = control_sender.send(Event::Wake);
             ServiceControlHandlerResult::NoError
         }
-        ServiceControl::PowerEvent(_) | ServiceControl::Interrogate => {
+        // A boot that resumes the service instead of starting it anew still
+        // ends with a logon, and so does a sign-in after a sign-out.
+        ServiceControl::SessionChange(change)
+            if change.reason == SessionChangeReason::SessionLogon =>
+        {
+            let _ = control_sender.send(Event::Logon);
             ServiceControlHandlerResult::NoError
         }
+        ServiceControl::PowerEvent(_)
+        | ServiceControl::SessionChange(_)
+        | ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
     };
     let status = service_control_handler::register(SERVICE_NAME, handler)
@@ -115,6 +122,7 @@ fn serve(options: &Options, log: &mut Log) -> Result<(), String> {
             ServiceControlAccept::STOP
                 | ServiceControlAccept::SHUTDOWN
                 | ServiceControlAccept::POWER_EVENT
+                | ServiceControlAccept::SESSION_CHANGE
         } else {
             ServiceControlAccept::empty()
         };
