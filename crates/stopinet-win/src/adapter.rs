@@ -133,6 +133,11 @@ fn observation(lookup: Result<TunnelLookup, Win32Error>, driver: &str) -> Observ
             down(Some("adapter is not operational".into()))
         }
         Ok(TunnelLookup::Missing) => down(None),
+        // Windows removes the registry entry of an adapter shortly before
+        // the interface itself.
+        Ok(TunnelLookup::WrongDriver { driver: found }) if found.is_empty() => down(Some(
+            "adapter has no driver entry in the registry, probably being removed".into(),
+        )),
         Ok(TunnelLookup::WrongDriver { driver: found }) => down(Some(format!(
             "adapter found, but its driver is '{found}', expected '{driver}'"
         ))),
@@ -286,6 +291,9 @@ mod tests {
             Ok(TunnelLookup::WrongDriver {
                 driver: "tap0901".into(),
             }),
+            Ok(TunnelLookup::WrongDriver {
+                driver: String::new(),
+            }),
             Err(Win32Error {
                 operation: "GetIfTable2",
                 code: 8,
@@ -298,6 +306,19 @@ mod tests {
             assert_eq!(seen.luid, None);
             assert_eq!(seen.note.is_none(), missing);
         }
+    }
+
+    #[test]
+    fn an_adapter_without_driver_entry_is_reported_as_being_removed() {
+        let seen = observation(
+            Ok(TunnelLookup::WrongDriver {
+                driver: String::new(),
+            }),
+            "Wintun",
+        );
+        let note = seen.note.unwrap();
+        assert!(note.contains("being removed"), "{note}");
+        assert!(!note.contains("''"), "{note}");
     }
 
     #[test]
