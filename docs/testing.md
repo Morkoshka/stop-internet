@@ -1,5 +1,7 @@
 # Manual tests
 
+English | [Русский](testing.ru.md)
+
 Everything that installs filters or services is tested by hand on a real
 machine. Unit tests cover the logic; these steps cover what only Windows can
 show. Each step says what it changes, how to undo it and what to expect.

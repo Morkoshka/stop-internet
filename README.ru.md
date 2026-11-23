@@ -64,7 +64,7 @@ VPN-клиента, который несёт туннель. Базовый н�
 сбои, временные фильтры исчезают вместе со службой.
 
 Модель угроз, таблица правил и устройство фильтров WFP — в
-[docs/design.md](docs/design.md) (на английском).
+[docs/design.ru.md](docs/design.ru.md).
 
 ## Сборка
 
@@ -82,7 +82,7 @@ cargo run -p stopinet-cli -- policy --config config/stopinet.example.toml --mode
 ```
 
 Служба, из терминала администратора (перед первым запуском прочитайте
-[docs/testing.md](docs/testing.md), на английском):
+[docs/testing.ru.md](docs/testing.ru.md)):
 
 ```powershell
 .\target\release\stopinet.exe install --config <ваш конфиг> --session-only

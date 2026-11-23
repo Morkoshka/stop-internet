@@ -1,5 +1,7 @@
 # Design
 
+English | [Русский](design.ru.md)
+
 This document describes how stop-internet works and why it is built this
 way. It is the reference for the implementation; the README is the short
 version.
