@@ -63,7 +63,8 @@ the VPN daemon that carries the tunnel. The baseline survives reboots and
 crashes; session filters vanish with the service.
 
 See [docs/design.md](docs/design.md) for the threat model, the rule table and
-the WFP mapping.
+the WFP mapping. The same documents, in English and Russian, are in the
+[wiki](https://github.com/Morkoshka/stop-internet/wiki).
 
 ## Building
 

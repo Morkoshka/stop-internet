@@ -1,0 +1,33 @@
+name: Wiki
+
+# The wiki is built from docs/ and replaced on every change, so it always
+# matches main. See tools/wiki.sh.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "tools/wiki.sh"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      # Pushing to <repo>.wiki.git needs write access to the contents.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish docs/ to the wiki
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/wiki.sh publish

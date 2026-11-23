@@ -64,7 +64,8 @@ VPN-клиента, который несёт туннель. Базовый н�
 сбои, временные фильтры исчезают вместе со службой.
 
 Модель угроз, таблица правил и устройство фильтров WFP — в
-[docs/design.ru.md](docs/design.ru.md).
+[docs/design.ru.md](docs/design.ru.md). Те же документы на русском и
+английском есть в [вики](https://github.com/Morkoshka/stop-internet/wiki).
 
 ## Сборка
 
