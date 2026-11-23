@@ -33,6 +33,16 @@ pub enum Mode {
 impl Mode {
     /// All modes, for exhaustive checks.
     pub const ALL: [Self; 3] = [Self::TunnelOnly, Self::Proxy, Self::Normal];
+
+    /// Mode after the machine wakes up from sleep or hibernation, including
+    /// a boot with Fast Startup: "normal internet" never survives it, the
+    /// protected modes stay.
+    pub fn after_wake(self) -> Self {
+        match self {
+            Self::Normal => Self::TunnelOnly,
+            protected => protected,
+        }
+    }
 }
 
 impl FromStr for Mode {
@@ -382,6 +392,13 @@ allow_lan = {allow_lan}
         let open = Policy::build(&config(true), Mode::TunnelOnly, TunnelState::Up);
         assert!(!closed.permits(&Matcher::Lan));
         assert!(open.permits(&Matcher::Lan));
+    }
+
+    #[test]
+    fn waking_up_ends_normal_internet_only() {
+        assert_eq!(Mode::Normal.after_wake(), Mode::TunnelOnly);
+        assert_eq!(Mode::TunnelOnly.after_wake(), Mode::TunnelOnly);
+        assert_eq!(Mode::Proxy.after_wake(), Mode::Proxy);
     }
 
     #[test]

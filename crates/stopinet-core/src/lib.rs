@@ -11,3 +11,10 @@ pub mod policy;
 
 pub use config::{Config, ConfigError};
 pub use policy::{Action, Matcher, Mode, Policy, Rule, Scope, TunnelState};
+
+/// Name of the Windows service.
+pub const SERVICE_NAME: &str = "stopinet";
+
+/// Service argument for session-only mode, meant for testing: the service
+/// installs nothing persistent, so every filter disappears when it stops.
+pub const SESSION_ONLY_ARG: &str = "--session-only";

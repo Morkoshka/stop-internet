@@ -8,8 +8,15 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+/// Data folder of the installed service: configuration and log. Writable by
+/// administrators only.
+pub const DATA_DIR: &str = r"C:\ProgramData\stop-internet";
+
 /// Default location of the installed configuration file.
 pub const DEFAULT_PATH: &str = r"C:\ProgramData\stop-internet\config.toml";
+
+/// Event log of the service.
+pub const LOG_PATH: &str = r"C:\ProgramData\stop-internet\service.log";
 
 /// Longest allowed timed "normal internet" period: one day.
 const MAX_DURATION_MIN: u32 = 24 * 60;
@@ -222,6 +229,17 @@ tunnel_apps = ['C:\vpn\daemon.exe']
         assert_eq!(config.tunnel.adapter_name, "happ-default-tun");
         assert_eq!(config.tunnel.driver, "Wintun");
         assert!(!config.network.allow_lan);
+    }
+
+    #[test]
+    fn installed_files_live_in_the_data_folder() {
+        for file in [DEFAULT_PATH, LOG_PATH] {
+            assert_eq!(
+                Path::new(file).parent(),
+                Some(Path::new(DATA_DIR)),
+                "{file}"
+            );
+        }
     }
 
     #[test]
