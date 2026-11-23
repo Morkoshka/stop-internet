@@ -106,8 +106,8 @@ fn policy(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// What the trial last saw of the tunnel.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What the trial saw of the tunnel.
+#[derive(Debug)]
 struct Observation {
     state: TunnelState,
     luid: Option<u64>,
@@ -157,11 +157,17 @@ fn trial(args: &[String]) -> Result<(), String> {
 
     let started = Instant::now();
     let deadline = started + Duration::from_secs(options.seconds);
-    let mut last: Option<Observation> = None;
+    // Filters are rebuilt only when the tunnel state or adapter changes;
+    // a changed note alone is just printed.
+    let mut applied: Option<(TunnelState, Option<u64>)> = None;
+    let mut last_note: Option<String> = None;
 
     while Instant::now() < deadline {
         let now = observe(&config);
-        if last.as_ref() != Some(&now) {
+        let elapsed = started.elapsed().as_secs();
+
+        let changed = applied != Some((now.state, now.luid));
+        if changed {
             let policy = Policy::build(&config, options.mode, now.state);
             let plan = Plan::build(
                 &policy,
@@ -176,14 +182,24 @@ fn trial(args: &[String]) -> Result<(), String> {
                 TunnelState::Down => "down",
             };
             println!(
-                "[{:>4}s] tunnel {state}: {} filters active",
-                started.elapsed().as_secs(),
+                "[{elapsed:>4}s] tunnel {state}: {} filters active",
                 report.filters
             );
-            for line in now.note.iter().chain(&report.warnings) {
+            for line in &report.warnings {
                 println!("         note: {line}");
             }
-            last = Some(now);
+            applied = Some((now.state, now.luid));
+        }
+
+        if now.note != last_note {
+            if let Some(note) = &now.note {
+                if changed {
+                    println!("         note: {note}");
+                } else {
+                    println!("[{elapsed:>4}s] note: {note}");
+                }
+            }
+            last_note = now.note;
         }
         thread::sleep(POLL_INTERVAL);
     }
