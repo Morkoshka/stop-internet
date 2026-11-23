@@ -241,10 +241,9 @@ tunnel_apps = ['C:\vpn\daemon.exe']
 
     #[test]
     fn unc_app_path_is_accepted() {
-        let config = Config::from_toml(&minimal(
-            "[direct]\napps = ['\\\\server\\share\\game.exe']",
-        ))
-        .unwrap();
+        let config =
+            Config::from_toml(&minimal("[direct]\napps = ['\\\\server\\share\\game.exe']"))
+                .unwrap();
         assert_eq!(config.direct.apps.len(), 1);
     }
 

@@ -71,7 +71,9 @@ impl FromStr for TunnelState {
         match s {
             "up" => Ok(Self::Up),
             "down" => Ok(Self::Down),
-            other => Err(format!("unknown tunnel state '{other}', expected up or down")),
+            other => Err(format!(
+                "unknown tunnel state '{other}', expected up or down"
+            )),
         }
     }
 }
