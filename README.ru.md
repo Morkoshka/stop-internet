@@ -108,6 +108,7 @@ cargo run -p stopinet-cli -- policy --config config/stopinet.example.toml --mode
 | `config/` | пример конфигурации |
 | `docs/` | архитектура, ручные тесты |
 | `tools/diag.ps1` | диагностика сети: только чтение, данные обезличены |
+| `tools/blocked.ps1` | обезличенный отчёт о заблокированных соединениях (на время работы включает аудит) |
 
 ## План
 

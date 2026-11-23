@@ -107,6 +107,7 @@ filter in an emergency.
 | `config/` | example configuration |
 | `docs/` | design, manual tests |
 | `tools/diag.ps1` | read-only, anonymized network diagnostics |
+| `tools/blocked.ps1` | anonymized report of blocked connections (turns on auditing while it runs) |
 
 ## Roadmap
 
