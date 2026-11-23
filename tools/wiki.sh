@@ -49,7 +49,7 @@ build() {
 
 publish() {
     : "${GH_TOKEN:?GH_TOKEN is required}"
-    local work
+    # Not local: the EXIT trap runs after this function has returned.
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
 
