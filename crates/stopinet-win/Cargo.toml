@@ -1,0 +1,16 @@
+[package]
+name = "stopinet-win"
+description = "Windows integration of stop-internet: WFP engine and network adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+stopinet-core.workspace = true
+windows-sys.workspace = true
+
+[lints]
+workspace = true
