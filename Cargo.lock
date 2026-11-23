@@ -99,6 +99,7 @@ version = "0.1.0"
 dependencies = [
  "stopinet-core",
  "stopinet-win",
+ "windows-service",
 ]
 
 [[package]]

@@ -2,9 +2,9 @@
 //! baseline, the tunnel adapter lookup and interface notifications.
 //!
 //! The `unsafe` code of the project lives in this crate, in the [`wfp`],
-//! [`adapter`], [`watch`] and [`clock`] modules, apart from what the
-//! `windows-service` crate generates for the service entry point. Every
-//! unsafe block states why it is sound.
+//! [`adapter`], [`watch`], [`clock`] and [`security`] modules, apart from
+//! what the `windows-service` crate generates for the service entry point.
+//! Every unsafe block states why it is sound.
 
 #![cfg(windows)]
 #![warn(clippy::undocumented_unsafe_blocks)]
@@ -14,6 +14,7 @@ pub mod clock;
 pub mod firewall;
 pub mod persistent;
 pub mod plan;
+pub mod security;
 pub mod watch;
 pub mod wfp;
 mod wide;

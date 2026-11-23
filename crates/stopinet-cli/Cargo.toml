@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 stopinet-core.workspace = true
 stopinet-win.workspace = true
+windows-service.workspace = true
 
 [lints]
 workspace = true
