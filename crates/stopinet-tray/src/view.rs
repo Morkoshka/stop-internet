@@ -99,33 +99,37 @@ impl View {
         }
     }
 
-    /// One line about the state, for the tooltip and the top of the menu.
-    pub fn summary(&self) -> String {
+    /// Two short lines about the state, for the tooltip and the top of the
+    /// menu: what holds and what it means now. Short lines keep the menu
+    /// narrow.
+    pub fn lines(&self) -> (&'static str, String) {
         let status = match self {
             Self::Status(status) => status,
-            Self::Unreachable(problem) => return problem_text(*problem).into(),
+            Self::Unreachable(problem) => {
+                let (title, detail) = problem_lines(*problem);
+                return (title, detail.into());
+            }
         };
         match (status.mode, status.tunnel, status.left) {
-            (Mode::TunnelOnly, TunnelState::Up, _) => "Только туннель: интернет через VPN".into(),
+            (Mode::TunnelOnly, TunnelState::Up, _) => {
+                ("Только туннель", "интернет через VPN".into())
+            }
             (Mode::TunnelOnly, TunnelState::Down, _) => {
-                "Только туннель: туннеля нет, интернет закрыт".into()
+                ("Только туннель", "туннеля нет, интернет закрыт".into())
             }
-            (Mode::Proxy, TunnelState::Up, _) => "Прокси: интернет через VPN".into(),
+            (Mode::Proxy, TunnelState::Up, _) => ("Прокси", "интернет через VPN".into()),
             (Mode::Proxy, TunnelState::Down, _) => {
-                "Прокси: туннеля нет, открыт только прокси клиента".into()
+                ("Прокси", "открыт только прокси клиента".into())
             }
-            (Mode::Normal, _, Some(Remaining::Time(left))) => {
-                format!("Обычный интернет: защита выключена, {}", left_text(left))
-            }
-            (Mode::Normal, _, _) => {
-                "Обычный интернет: защита выключена до перезагрузки или сна".into()
-            }
+            (Mode::Normal, _, Some(Remaining::Time(left))) => ("Защита выключена", left_text(left)),
+            (Mode::Normal, _, _) => ("Защита выключена", "до перезагрузки или сна".into()),
         }
     }
 
     /// Tooltip of the icon.
     pub fn tooltip(&self) -> String {
-        format!("stop-internet\n{}", self.summary())
+        let (title, detail) = self.lines();
+        format!("stop-internet\n{title}\n{detail}")
     }
 
     pub fn menu(&self) -> Vec<Entry> {
@@ -148,8 +152,10 @@ impl View {
                 enabled,
             })
             .collect::<Vec<_>>();
+        let (title, detail) = self.lines();
         vec![
-            Entry::Text(self.summary()),
+            Entry::Text(title.into()),
+            Entry::Text(detail),
             Entry::Separator,
             item("Только туннель", Choice::TunnelOnly),
             item("Прокси", Choice::Proxy),
@@ -176,6 +182,18 @@ impl View {
     }
 }
 
+/// The state lines when the service cannot be asked.
+fn problem_lines(problem: Problem) -> (&'static str, &'static str) {
+    match problem {
+        Problem::NotInstalled => ("Служба не установлена", "установите stop-internet"),
+        Problem::NotRunning => ("Служба остановлена", "запустится после перезагрузки"),
+        Problem::OldService => ("Служба старой версии", "установите stop-internet заново"),
+        Problem::Impostor => ("Канал службы занят", "другой программой"),
+        Problem::NoAnswer => ("Служба не отвечает", "проверка раз в секунду"),
+    }
+}
+
+/// A full sentence for a message box.
 pub fn problem_text(problem: Problem) -> &'static str {
     match problem {
         Problem::NotInstalled => "Служба stop-internet не установлена",
@@ -256,17 +274,51 @@ mod tests {
     }
 
     #[test]
-    fn summary_shows_the_time_left() {
+    fn lines_show_the_time_left() {
         let view = status(
             Mode::Normal,
             TunnelState::Up,
             Some(Remaining::Time(Duration::from_secs(13 * 60 + 1))),
         );
+        assert_eq!(view.lines(), ("Защита выключена", "ещё 14 мин".into()));
         assert_eq!(
-            view.summary(),
-            "Обычный интернет: защита выключена, ещё 14 мин"
+            view.tooltip(),
+            "stop-internet\nЗащита выключена\nещё 14 мин"
         );
-        assert!(view.tooltip().starts_with("stop-internet\n"));
+    }
+
+    #[test]
+    fn state_lines_are_short_to_keep_the_menu_narrow() {
+        let mut views = Vec::new();
+        for mode in [Mode::TunnelOnly, Mode::Proxy] {
+            for tunnel in [TunnelState::Up, TunnelState::Down] {
+                views.push(status(mode, tunnel, None));
+            }
+        }
+        views.push(status(
+            Mode::Normal,
+            TunnelState::Down,
+            Some(Remaining::UntilReset),
+        ));
+        views.push(status(
+            Mode::Normal,
+            TunnelState::Down,
+            Some(Remaining::Time(Duration::from_secs(1440 * 60))),
+        ));
+        for problem in [
+            Problem::NotInstalled,
+            Problem::NotRunning,
+            Problem::OldService,
+            Problem::Impostor,
+            Problem::NoAnswer,
+        ] {
+            views.push(View::Unreachable(problem));
+        }
+        for view in views {
+            let (title, detail) = view.lines();
+            assert!(title.chars().count() <= 32, "{title}");
+            assert!(detail.chars().count() <= 32, "{detail}");
+        }
     }
 
     #[test]
@@ -340,7 +392,7 @@ mod tests {
         }
         assert_eq!(
             menu.first(),
-            Some(&Entry::Text("Служба stop-internet остановлена".into()))
+            Some(&Entry::Text("Служба остановлена".into()))
         );
     }
 
