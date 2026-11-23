@@ -17,6 +17,11 @@ use std::str::FromStr;
 
 use crate::config::Config;
 
+/// Process of the Windows DNS client: the DNS Client service runs in
+/// `svchost.exe` and sends the queries of all programs that use the system
+/// resolver.
+pub const SYSTEM_DNS_APP: &str = r"C:\Windows\System32\svchost.exe";
+
 /// Protection mode selected by the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Mode {
@@ -143,6 +148,10 @@ pub enum Matcher {
     App(PathBuf),
     /// Private, link-local and multicast ranges, except DNS.
     Lan,
+    /// Outbound DNS queries (remote port 53, UDP and TCP) of the Windows
+    /// DNS client, [`SYSTEM_DNS_APP`]. It resolves names for every program
+    /// that uses the system resolver.
+    SystemDns,
 }
 
 /// One rule of a policy.
@@ -201,6 +210,11 @@ impl Policy {
                 }
                 if mode == Mode::Proxy {
                     rules.extend(permit_apps(&config.client.proxy_apps, Scope::Session));
+                    // Without TUN the proxy core finds its server through the
+                    // system resolver, so DNS has to work. The router and the
+                    // provider see the names programs look up; their traffic
+                    // stays blocked unless it goes through the proxy.
+                    rules.push(Rule::session(Action::Permit, Matcher::SystemDns));
                 }
             }
         }
@@ -267,6 +281,7 @@ impl fmt::Display for Matcher {
             Self::TunnelInterface(name) => write!(f, "tunnel adapter \"{name}\""),
             Self::App(path) => write!(f, "app {}", path.display()),
             Self::Lan => f.write_str("local network (DNS excluded)"),
+            Self::SystemDns => f.write_str("Windows DNS client (svchost.exe, port 53)"),
         }
     }
 }
@@ -380,6 +395,22 @@ allow_lan = {allow_lan}
         assert!(policy.permits(&app(CORE)));
         assert!(!policy.permits(&app(DAEMON)));
         assert!(!policy.permits(&tunnel()));
+    }
+
+    #[test]
+    fn only_proxy_mode_lets_the_system_resolver_out() {
+        let config = config(false);
+        for state in TunnelState::ALL {
+            let proxy = Policy::build(&config, Mode::Proxy, state);
+            assert!(proxy.permits(&Matcher::SystemDns), "{state:?}");
+            assert!(
+                proxy
+                    .session()
+                    .any(|r| r.matcher == Matcher::SystemDns && r.action == Action::Permit)
+            );
+            let tunnel = Policy::build(&config, Mode::TunnelOnly, state);
+            assert!(!tunnel.permits(&Matcher::SystemDns), "{state:?}");
+        }
     }
 
     #[test]

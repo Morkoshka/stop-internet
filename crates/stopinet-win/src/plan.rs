@@ -6,7 +6,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use stopinet_core::policy::{Action, Matcher, Policy, Rule, Scope};
+use stopinet_core::policy::{Action, Matcher, Policy, Rule, SYSTEM_DNS_APP, Scope};
 
 /// `FWP_CONDITION_FLAG_IS_LOOPBACK`.
 pub const LOOPBACK_FLAG: u32 = 0x1;
@@ -283,6 +283,13 @@ impl Plan {
                 vec![Condition::equal(Field::AppId, Value::AppPath(path.clone()))]
             }),
             Matcher::Lan => add(&Layer::ALE, &lan_conditions),
+            // Outbound only: answers come back on the same flow.
+            Matcher::SystemDns => add(&[Layer::ConnectV4, Layer::ConnectV6], &|_| {
+                vec![
+                    Condition::equal(Field::AppId, Value::AppPath(SYSTEM_DNS_APP.into())),
+                    Condition::equal(Field::RemotePort, Value::U16(DNS_PORT)),
+                ]
+            }),
         }
     }
 }
@@ -494,6 +501,35 @@ allow_lan = {allow_lan}
         let plan = plan(Mode::TunnelOnly, TunnelState::Up, Environment::default());
         assert_eq!(plan.only(Scope::Session).skipped.len(), 1);
         assert!(plan.only(Scope::Persistent).skipped.is_empty());
+    }
+
+    #[test]
+    fn proxy_mode_lets_the_dns_client_send_queries_out() {
+        let proxy = plan(Mode::Proxy, TunnelState::Down, Environment::default());
+        let dns: Vec<_> = proxy
+            .filters
+            .iter()
+            .filter(|f| f.app_path() == Some(&PathBuf::from(SYSTEM_DNS_APP)))
+            .collect();
+        assert_eq!(dns.len(), 2);
+        for filter in &dns {
+            assert!(matches!(filter.layer, Layer::ConnectV4 | Layer::ConnectV6));
+            assert_eq!(filter.action, Action::Permit);
+            assert_eq!(filter.scope, Scope::Session);
+            assert!(
+                filter
+                    .conditions
+                    .contains(&Condition::equal(Field::RemotePort, Value::U16(DNS_PORT)))
+            );
+        }
+
+        let tunnel = plan(Mode::TunnelOnly, TunnelState::Down, Environment::default());
+        assert!(
+            tunnel
+                .filters
+                .iter()
+                .all(|f| f.app_path() != Some(&PathBuf::from(SYSTEM_DNS_APP)))
+        );
     }
 
     #[test]
