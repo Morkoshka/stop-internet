@@ -22,6 +22,10 @@ proxy_apps = ['C:\Program Files\FlyFrogLLC\Happ\core\xray.exe']
 # the tunnel is down. Usually the same apps that are excluded from the tunnel
 # in the VPN client, so that a game keeps running when the tunnel drops.
 apps = [
+    # The Happ UI downloads subscriptions directly. Without this line they
+    # update only while Happ is connected. With it the provider sees the
+    # subscription server and update checks of Happ while it is disconnected.
+    # 'C:\Program Files\FlyFrogLLC\Happ\Happ.exe',
     # 'D:\Games\SomeGame\game.exe',
 ]
 

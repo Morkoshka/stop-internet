@@ -75,9 +75,12 @@ flowchart LR
 | App excluded in Happ | TUN → happd → physical adapter, xray not involved, UDP included |
 | System proxy mode, no TUN | app → loopback proxy → xray → physical adapter |
 | Happ itself | happd keeps one connection of its own on the physical adapter |
+| Subscription updates | `Happ.exe` (the UI) connects directly, HTTPS; while connected this works through the rules for the tunnel |
 
 So with TUN, **only `happd.exe` needs the physical adapter**. In system proxy
-mode only `xray.exe` does.
+mode only `xray.exe` does. While Happ is disconnected, `Happ.exe` can update
+subscriptions only if it is in the `direct` list; then the provider sees the
+subscription server and the update checks of Happ.
 
 ## Modes
 
