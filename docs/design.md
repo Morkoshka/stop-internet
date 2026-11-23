@@ -144,27 +144,53 @@ every mode and state.
   it. Persistent rules use `FWPM_FILTER_FLAG_PERSISTENT`; boot-time copies
   (`FWPM_FILTER_FLAG_BOOTTIME`) cover the time before the Base Filtering
   Engine starts.
+- The provider and the sublayer are persistent, and the session filters of
+  the service are added on top of them. The provider names no service on
+  purpose: the Base Filtering Engine skips persistent objects of a provider
+  whose service is not set to start automatically, and the baseline must
+  hold even when the service is disabled.
+- The persistent baseline is replaced in one transaction, the boot-time
+  copies in a second one. The copies only matter between the start of the
+  TCP/IP driver and the start of the Base Filtering Engine, so a failure to
+  update them is logged and does not stop the service.
 - Every change of state is applied in one WFP transaction, so there is no
   moment without a rule set.
 
 ## Lifecycle
 
 - **Boot.** Boot-time filters block until the Base Filtering Engine starts,
-  then the persistent baseline takes over. The service starts in "tunnel
-  only".
+  then the persistent baseline takes over. The service starts automatically
+  after the Base Filtering Engine, in "tunnel only".
+- **Service start.** The service loads the configuration, replaces the
+  persistent baseline with the one built from it, opens its dynamic session
+  and adds the session rules for the current tunnel state. Only then does it
+  report "running". If any step fails, it exits with an error code and the
+  previous baseline keeps blocking.
 - **Tunnel up or down.** The service listens to interface change
-  notifications (`NotifyIpInterfaceChange`) and rechecks periodically as a
+  notifications (`NotifyIpInterfaceChange`) and rechecks every 2 seconds as a
   safety net. On a change it rebuilds the session rules. The tunnel is "up"
   when an adapter with the configured alias and driver exists and is
   operational.
+- **Sleep and wake-up.** On `PBT_APMRESUMEAUTOMATIC`, sent on every wake-up
+  and on a boot with Fast Startup, "normal internet" ends and the tunnel is
+  checked again. The protected modes stay as they were.
 - **Switching to a protected mode.** Adding filters at ALE layers makes
   Windows re-authorize existing connections, so direct connections opened in
   normal mode are cut. To be verified by tests.
-- **Service crash.** The dynamic session closes, session rules disappear, the
-  baseline stays. The service control manager restarts the service.
+- **Service stop or crash.** The dynamic session closes, session rules
+  disappear, the baseline stays. After a crash or a failed start the service
+  control manager restarts the service after 5, 10 and 30 seconds; the
+  failure count resets after a day.
 - **Uninstall and emergency.** `stopinet uninstall` and `stopinet panic`
-  remove every object of the stop-internet provider, persistent ones
-  included. Recovery from Safe Mode is documented with the installer.
+  stop the service first, because its session filters go away only with its
+  session, then remove every object of the stop-internet provider,
+  persistent and boot-time ones included. `panic` keeps the service
+  installed: protection returns when it starts again.
+- **Session-only mode.** `stopinet install --session-only` starts the service
+  with `--session-only`. It installs nothing persistent and keeps every rule,
+  the baseline included, in its dynamic session, like a trial without a time
+  limit. Stopping the service removes every filter. It is meant for the first
+  tests of the service on a real machine.
 
 ## Excluded apps when the tunnel drops
 
@@ -191,18 +217,23 @@ Limits:
 | Component | Runs as | Role |
 |---|---|---|
 | `stopinet-core` | library | configuration, policy model; no unsafe code, no system calls |
-| `stopinet-service` | LocalSystem service | WFP filters, tunnel and power events, named pipe server |
-| `stopinet-tray` | user session | status icon, menu in Russian, notifications |
-| `stopinet` | CLI | status, mode, install, uninstall, panic, policy dry run |
+| `stopinet-win` | library | WFP engine, persistent baseline, adapter lookup and notifications; all unsafe code |
+| `stopinet-service` | LocalSystem service | WFP filters, tunnel and power events, named pipe server (planned) |
+| `stopinet-tray` | user session | status icon, menu in Russian, notifications (planned) |
+| `stopinet` | CLI | policy dry run, trial, install, uninstall, panic, status; mode (planned) |
 
 - The tray and the CLI talk to the service over a named pipe. Its security
   descriptor admits SYSTEM, Administrators and the interactive user.
   Requests that lower protection need an elevated client token, which the
   tray obtains with a UAC prompt.
-- The configuration lives in `%ProgramData%\stop-internet\config.toml` and is
-  writable by administrators only.
-- Logs record events (mode changes, tunnel up and down, errors), never remote
-  addresses.
+- The programs live in `%ProgramFiles%\stop-internet`, so only
+  administrators can replace the binary of a LocalSystem service.
+- The configuration lives in `%ProgramData%\stop-internet\config.toml`. The
+  folder gets its own permissions: full control for SYSTEM and
+  Administrators, read for Users, nothing inherited from `ProgramData`.
+- The service log, `%ProgramData%\stop-internet\service.log`, records events
+  (start, stop, mode changes, tunnel up and down, errors), never remote
+  addresses. Over 1 MiB it starts over and keeps one previous file.
 
 ## Decisions
 
@@ -223,17 +254,20 @@ Limits:
 
 ## Testing
 
-- `stopinet-core` has unit tests for the configuration and the policy
-  invariants. They run in CI.
+- Unit tests cover the configuration, the policy invariants, the filter
+  plan (including "the persistent part is the same in every state"), the
+  tunnel observation and the event loop of the service. They run in CI.
 - Anything that installs filters or services is tested manually by the owner
-  of the machine, following a written checklist: capture traffic on the
+  of the machine, following a written checklist
+  ([`docs/testing.md`](testing.md)): capture traffic on the
   physical adapter with `pktmon`, read WFP audit events (5157), and go
   through the scenarios: kill the client and its core, disconnect the tunnel,
   pull the cable, sleep and wake, reboot, kill the service, IPv6, DNS, UDP and
   QUIC, an excluded app before and after the tunnel drops.
-- During development filters are session-only and roll back automatically
-  after a timeout unless confirmed, so a mistake cannot leave the machine
-  offline.
+- New rules are tried with `stopinet trial` first: session filters that
+  roll back after a timeout. The service is tested in session-only mode
+  before the persistent baseline, and `stopinet panic` is checked right after
+  the first persistent install, before any reboot.
 
 ## Privacy
 
@@ -247,10 +281,12 @@ Limits:
 ## Roadmap
 
 1. Design, configuration and policy model. **Done.**
-2. WFP engine and CLI with session filters and automatic rollback.
-3. Tunnel monitor and mode switching.
+2. WFP engine and CLI with session filters and automatic rollback. **Done.**
+3. Tunnel monitor. **Done.** Mode switching moved to step 5, it needs the
+   named pipe.
 4. Windows service: persistent and boot-time filters, crash and power
-   handling.
-5. Tray icon, named pipe, UAC and timed normal mode.
-6. Installer, uninstaller, emergency removal.
-7. Test checklist, release builds.
+   handling; `install`, `uninstall`, `panic`, `status`. **Implemented,
+   manual tests in progress.**
+5. Tray icon, named pipe, mode switching, UAC and timed normal mode.
+6. Installer package and a recovery guide.
+7. Full test checklist, release builds.

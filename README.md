@@ -5,8 +5,9 @@ English | [Русский](README.ru.md)
 Fail-closed kill switch for TUN-based VPN clients on Windows, built on the
 Windows Filtering Platform (WFP).
 
-> **Status:** early development. The design, the configuration and the policy
-> model are done; the firewall engine is next. Not ready for daily use.
+> **Status:** early development. The firewall engine and the Windows service
+> are implemented and being tested by hand; the tray icon is next. Not ready
+> for daily use.
 
 ## Why
 
@@ -79,26 +80,41 @@ Dry run of the policy, without touching the system:
 cargo run -p stopinet-cli -- policy --config config/stopinet.example.toml --mode tunnel --tunnel down
 ```
 
+Service, from an elevated terminal (see [docs/testing.md](docs/testing.md)
+before the first run):
+
+```powershell
+.\target\release\stopinet.exe install --config <your config> --session-only
+.\target\release\stopinet.exe status
+.\target\release\stopinet.exe panic
+.\target\release\stopinet.exe uninstall
+```
+
+`--session-only` keeps nothing persistent and is meant for testing; without
+it the baseline survives reboots and service crashes. `panic` removes every
+filter in an emergency.
+
 ## Repository layout
 
 | Path | Content |
 |---|---|
 | `crates/stopinet-core` | configuration and policy model |
-| `crates/stopinet-service` | Windows service (planned) |
+| `crates/stopinet-win` | WFP engine, persistent baseline, tunnel adapter lookup |
+| `crates/stopinet-service` | Windows service |
 | `crates/stopinet-tray` | tray icon (planned) |
 | `crates/stopinet-cli` | `stopinet` command-line tool |
 | `config/` | example configuration |
-| `docs/` | design |
+| `docs/` | design, manual tests |
 | `tools/diag.ps1` | read-only, anonymized network diagnostics |
 
 ## Roadmap
 
 - [x] Design, configuration, policy model
-- [ ] WFP engine and CLI with automatic rollback
-- [ ] Tunnel monitor and mode switching
-- [ ] Windows service: persistent and boot-time filters
-- [ ] Tray icon, UAC, timed normal mode
-- [ ] Installer, uninstaller, emergency removal
+- [x] WFP engine and CLI with automatic rollback
+- [x] Tunnel monitor
+- [ ] Windows service: persistent and boot-time filters (implemented, testing)
+- [ ] Tray icon, mode switching, UAC, timed normal mode
+- [ ] Installer package and recovery guide
 - [ ] Test checklist and releases
 
 ## License
