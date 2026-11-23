@@ -19,7 +19,7 @@ pub const DEFAULT_PATH: &str = r"C:\ProgramData\stop-internet\config.toml";
 pub const LOG_PATH: &str = r"C:\ProgramData\stop-internet\service.log";
 
 /// Longest allowed timed "normal internet" period: one day.
-const MAX_DURATION_MIN: u32 = 24 * 60;
+pub const MAX_DURATION_MIN: u32 = 24 * 60;
 
 /// Complete configuration of the service.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

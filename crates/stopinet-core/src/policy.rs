@@ -34,13 +34,22 @@ impl Mode {
     /// All modes, for exhaustive checks.
     pub const ALL: [Self; 3] = [Self::TunnelOnly, Self::Proxy, Self::Normal];
 
-    /// Mode after the machine wakes up from sleep or hibernation, including
-    /// a boot with Fast Startup: "normal internet" never survives it, the
-    /// protected modes stay.
-    pub fn after_wake(self) -> Self {
+    /// Mode after the machine wakes up from sleep or hibernation, or after a
+    /// user logs on: "normal internet" never survives it, the protected
+    /// modes stay. A service start always begins with [`Mode::TunnelOnly`].
+    pub fn after_reset(self) -> Self {
         match self {
             Self::Normal => Self::TunnelOnly,
             protected => protected,
+        }
+    }
+
+    /// Word used on the command line and in the named pipe protocol.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::TunnelOnly => "tunnel",
+            Self::Proxy => "proxy",
+            Self::Normal => "normal",
         }
     }
 }
@@ -72,6 +81,14 @@ pub enum TunnelState {
 impl TunnelState {
     /// All states, for exhaustive checks.
     pub const ALL: [Self; 2] = [Self::Up, Self::Down];
+
+    /// Word used on the command line and in the named pipe protocol.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Down => "down",
+        }
+    }
 }
 
 impl FromStr for TunnelState {
@@ -395,10 +412,10 @@ allow_lan = {allow_lan}
     }
 
     #[test]
-    fn waking_up_ends_normal_internet_only() {
-        assert_eq!(Mode::Normal.after_wake(), Mode::TunnelOnly);
-        assert_eq!(Mode::TunnelOnly.after_wake(), Mode::TunnelOnly);
-        assert_eq!(Mode::Proxy.after_wake(), Mode::Proxy);
+    fn a_reset_ends_normal_internet_only() {
+        assert_eq!(Mode::Normal.after_reset(), Mode::TunnelOnly);
+        assert_eq!(Mode::TunnelOnly.after_reset(), Mode::TunnelOnly);
+        assert_eq!(Mode::Proxy.after_reset(), Mode::Proxy);
     }
 
     #[test]
@@ -409,5 +426,15 @@ allow_lan = {allow_lan}
         assert!("off".parse::<Mode>().is_err());
         assert_eq!("up".parse::<TunnelState>(), Ok(TunnelState::Up));
         assert!("maybe".parse::<TunnelState>().is_err());
+    }
+
+    #[test]
+    fn words_parse_back() {
+        for mode in Mode::ALL {
+            assert_eq!(mode.word().parse::<Mode>(), Ok(mode));
+        }
+        for state in TunnelState::ALL {
+            assert_eq!(state.word().parse::<TunnelState>(), Ok(state));
+        }
     }
 }

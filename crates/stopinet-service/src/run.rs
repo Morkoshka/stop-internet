@@ -90,7 +90,7 @@ pub fn run(
             Next::Stop => break,
             Next::Check { woke } => {
                 if woke {
-                    let mode = follower.mode.after_wake();
+                    let mode = follower.mode.after_reset();
                     log.write(format_args!("woke up, mode {mode:?}"));
                     follower.mode = mode;
                 }
