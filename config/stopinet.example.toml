@@ -1,0 +1,35 @@
+# stop-internet configuration.
+#
+# Installed copy: C:\ProgramData\stop-internet\config.toml (writable by
+# administrators only). All paths must be absolute.
+# The values below match Happ 4.3 for Windows.
+
+[tunnel]
+# Interface alias of the tunnel adapter (see Get-NetAdapter -IncludeHidden).
+adapter_name = "happ-default-tun"
+# Driver of the adapter, as shown in its ComponentID.
+driver = "Wintun"
+
+[client]
+# Processes that carry the tunnel. They may use the physical network only
+# while the tunnel adapter is up. In Happ this is the HappService daemon.
+tunnel_apps = ['C:\Program Files\FlyFrogLLC\Happ\happd.exe']
+# Processes that carry the system proxy of the client (used in proxy mode).
+proxy_apps = ['C:\Program Files\FlyFrogLLC\Happ\core\xray.exe']
+
+[direct]
+# Applications that may always use the physical network directly, also when
+# the tunnel is down. Usually the same apps that are excluded from the tunnel
+# in the VPN client, so that a game keeps running when the tunnel drops.
+apps = [
+    # 'D:\Games\SomeGame\game.exe',
+]
+
+[network]
+# Allow the local network (private, link-local and multicast ranges).
+# DNS to the local network stays blocked even then, to avoid DNS leaks.
+allow_lan = false
+
+[normal_mode]
+# Durations offered for "normal internet", in minutes. 0 means until reboot.
+durations_min = [15, 60, 0]
