@@ -448,7 +448,7 @@ struct Icons([HICON; 3]);
 
 impl Icons {
     fn create(size: i32) -> Result<Self, Win32Error> {
-        let make = |color| make_icon(size, &icon::disc(size as u32, color));
+        let make = |color| make_icon(size, &icon::draw(size as u32, color));
         Ok(Self([
             make(Color::Green)?,
             make(Color::Red)?,

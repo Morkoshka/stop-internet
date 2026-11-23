@@ -1,6 +1,13 @@
 //! Pixels of the status icons, drawn in code so that the repository holds
-//! no binary images: a filled circle in the color of the state with a
-//! darker rim, smoothed at the edge, on a transparent background.
+//! no binary images: a shield in the color of the state with a darker rim
+//! and a white sign, smoothed at the edges, on a transparent background.
+//!
+//! The shape and the sign tell the states apart even where colors do not,
+//! for example next to the round voice indicator of a chat program:
+//! a check mark when protected and working, a cross when blocked, a dash
+//! when protection is off.
+
+use std::f32::consts::FRAC_PI_2;
 
 use crate::view::Color;
 
@@ -13,80 +20,192 @@ impl Color {
             Self::Grey => [0x8c, 0x95, 0x9f],
         }
     }
+
+    /// Strokes of the sign, in the unit square of the icon.
+    fn sign(self) -> &'static [Segment] {
+        match self {
+            Self::Green => &[((0.31, 0.46), (0.45, 0.60)), ((0.45, 0.60), (0.69, 0.33))],
+            Self::Red => &[((0.36, 0.30), (0.64, 0.58)), ((0.64, 0.30), (0.36, 0.58))],
+            Self::Grey => &[((0.33, 0.44), (0.67, 0.44))],
+        }
+    }
 }
 
-/// Subsamples per pixel along each axis, for the smooth edge.
+type Point = (f32, f32);
+type Segment = (Point, Point);
+
+/// Subsamples per pixel along each axis, for the smooth edges.
 const SAMPLES: u32 = 4;
+
+/// Edges of the shield in the unit square: sides, top, where the sides
+/// start to narrow, and the tip.
+const LEFT: f32 = 0.13;
+const RIGHT: f32 = 0.87;
+const TOP: f32 = 0.07;
+const WAIST: f32 = 0.50;
+const TIP: f32 = 0.96;
+const CORNER: f32 = 0.12;
+
+/// Half the width of a stroke of the sign.
+const STROKE: f32 = 0.068;
+
+const WHITE: [f32; 3] = [255.0, 255.0, 255.0];
 
 /// Pixels of a `size` × `size` icon, top row first, as `0xAARRGGBB` with
 /// straight alpha.
-pub fn disc(size: u32, color: Color) -> Vec<u32> {
-    let [r, g, b] = color.rgb();
-    let fill = [r, g, b].map(f32::from);
+pub fn draw(size: u32, color: Color) -> Vec<u32> {
+    let fill = color.rgb().map(f32::from);
     let rim = fill.map(|c| c * 0.65);
-
-    let center = size as f32 / 2.0;
-    let outer = center - 0.5;
-    let inner = outer - (size as f32 / 16.0).max(1.0);
+    let rim_width = (1.0 / 16.0_f32).max(1.0 / size as f32);
+    let sign = color.sign();
 
     let mut pixels = Vec::with_capacity((size * size) as usize);
     for y in 0..size {
         for x in 0..size {
-            let (mut in_disc, mut in_fill) = (0u32, 0u32);
+            let mut sum = [0.0f32; 3];
+            let mut covered = 0u32;
             for sy in 0..SAMPLES {
                 for sx in 0..SAMPLES {
-                    let px = x as f32 + (sx as f32 + 0.5) / SAMPLES as f32 - center;
-                    let py = y as f32 + (sy as f32 + 0.5) / SAMPLES as f32 - center;
-                    let distance = (px * px + py * py).sqrt();
-                    in_disc += u32::from(distance < outer);
-                    in_fill += u32::from(distance < inner);
+                    let u = (x as f32 + (sx as f32 + 0.5) / SAMPLES as f32) / size as f32;
+                    let v = (y as f32 + (sy as f32 + 0.5) / SAMPLES as f32) / size as f32;
+                    if !in_shield(u, v) {
+                        continue;
+                    }
+                    covered += 1;
+                    let paint = if on_sign(sign, (u, v)) {
+                        WHITE
+                    } else if near_edge(u, v, rim_width) {
+                        rim
+                    } else {
+                        fill
+                    };
+                    for (total, channel) in sum.iter_mut().zip(paint) {
+                        *total += channel;
+                    }
                 }
             }
-            if in_disc == 0 {
+            if covered == 0 {
                 pixels.push(0);
                 continue;
             }
-            let alpha = (in_disc * 255 / (SAMPLES * SAMPLES)) as u8;
-            let share = in_fill as f32 / in_disc as f32;
-            let [r, g, b] = [0, 1, 2].map(|i| (rim[i] + (fill[i] - rim[i]) * share).round() as u8);
+            let alpha = (covered * 255 / (SAMPLES * SAMPLES)) as u8;
+            let [r, g, b] = sum.map(|total| (total / covered as f32).round() as u8);
             pixels.push(u32::from_be_bytes([alpha, r, g, b]));
         }
     }
     pixels
 }
 
+/// A shield: straight sides with rounded top corners down to the waist,
+/// then curving in to a point.
+fn in_shield(u: f32, v: f32) -> bool {
+    if !(TOP..=TIP).contains(&v) {
+        return false;
+    }
+    let half = (RIGHT - LEFT) / 2.0;
+    let dx = (u - 0.5).abs();
+    if v > WAIST {
+        let t = (v - WAIST) / (TIP - WAIST);
+        return dx <= half * (t * FRAC_PI_2).cos();
+    }
+    if dx > half {
+        return false;
+    }
+    let (corner_x, corner_y) = (half - CORNER, TOP + CORNER);
+    if v < corner_y && dx > corner_x {
+        let (ex, ey) = (dx - corner_x, v - corner_y);
+        return ex * ex + ey * ey <= CORNER * CORNER;
+    }
+    true
+}
+
+/// Whether the point is within `width` of the outline.
+fn near_edge(u: f32, v: f32, width: f32) -> bool {
+    const DIRECTIONS: [(f32, f32); 8] = [
+        (1.0, 0.0),
+        (-1.0, 0.0),
+        (0.0, 1.0),
+        (0.0, -1.0),
+        (0.7, 0.7),
+        (-0.7, 0.7),
+        (0.7, -0.7),
+        (-0.7, -0.7),
+    ];
+    DIRECTIONS
+        .iter()
+        .any(|(du, dv)| !in_shield(u + du * width, v + dv * width))
+}
+
+fn on_sign(sign: &[Segment], point: Point) -> bool {
+    sign.iter()
+        .any(|&(a, b)| distance_to_segment(point, a, b) <= STROKE)
+}
+
+fn distance_to_segment(p: Point, a: Point, b: Point) -> f32 {
+    let (abx, aby) = (b.0 - a.0, b.1 - a.1);
+    let (apx, apy) = (p.0 - a.0, p.1 - a.1);
+    let length = abx * abx + aby * aby;
+    let t = ((apx * abx + apy * aby) / length).clamp(0.0, 1.0);
+    let (dx, dy) = (apx - abx * t, apy - aby * t);
+    (dx * dx + dy * dy).sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const COLORS: [Color; 3] = [Color::Green, Color::Red, Color::Grey];
 
     fn argb(pixel: u32) -> [u8; 4] {
         pixel.to_be_bytes()
     }
 
+    fn at(pixels: &[u32], size: u32, u: f32, v: f32) -> [u8; 4] {
+        let (x, y) = ((u * size as f32) as u32, (v * size as f32) as u32);
+        argb(pixels[(y * size + x) as usize])
+    }
+
     #[test]
     fn has_one_pixel_per_point() {
         for size in [16, 20, 24, 32] {
-            assert_eq!(disc(size, Color::Green).len(), (size * size) as usize);
+            for color in COLORS {
+                assert_eq!(draw(size, color).len(), (size * size) as usize);
+            }
         }
     }
 
     #[test]
-    fn corners_are_transparent_and_the_center_is_the_color() {
+    fn corners_and_the_sides_of_the_tip_are_transparent() {
         let size = 32;
-        let pixels = disc(size, Color::Red);
-        for corner in [0, size - 1, size * (size - 1), size * size - 1] {
-            assert_eq!(pixels[corner as usize], 0);
+        for color in COLORS {
+            let pixels = draw(size, color);
+            for corner in [0, size - 1, size * (size - 1), size * size - 1] {
+                assert_eq!(pixels[corner as usize], 0, "{color:?}");
+            }
+            assert_eq!(at(&pixels, size, 0.15, 0.92)[0], 0, "{color:?}");
+            assert_eq!(at(&pixels, size, 0.85, 0.92)[0], 0, "{color:?}");
         }
-        let [alpha, r, g, b] = argb(pixels[(size * size / 2 + size / 2) as usize]);
-        assert_eq!(alpha, 255);
-        assert_eq!([r, g, b], Color::Red.rgb());
+    }
+
+    #[test]
+    fn the_body_has_the_color_and_the_sign_is_white() {
+        let size = 32;
+        for color in COLORS {
+            let pixels = draw(size, color);
+            let [alpha, r, g, b] = at(&pixels, size, 0.25, 0.25);
+            assert_eq!(alpha, 255, "{color:?}");
+            assert_eq!([r, g, b], color.rgb(), "{color:?}");
+            let (from, to) = color.sign()[0];
+            let middle = ((from.0 + to.0) / 2.0, (from.1 + to.1) / 2.0);
+            assert_eq!(at(&pixels, size, middle.0, middle.1), [255; 4], "{color:?}");
+        }
     }
 
     #[test]
     fn the_rim_is_darker_than_the_fill() {
         let size = 32;
-        let pixels = disc(size, Color::Grey);
-        let row = size / 2;
+        let pixels = draw(size, Color::Grey);
+        let row = size / 3;
         let edge = (0..size)
             .map(|x| argb(pixels[(row * size + x) as usize]))
             .find(|p| p[0] == 255)
@@ -95,16 +214,33 @@ mod tests {
     }
 
     #[test]
-    fn is_symmetric() {
+    fn the_three_states_look_different() {
+        for size in [16, 32] {
+            let icons = COLORS.map(|color| draw(size, color));
+            let white = |pixels: &Vec<u32>| -> Vec<bool> {
+                pixels.iter().map(|&p| argb(p)[1..] == [255; 3]).collect()
+            };
+            // The signs differ even with the colors taken away.
+            assert_ne!(white(&icons[0]), white(&icons[1]));
+            assert_ne!(white(&icons[1]), white(&icons[2]));
+            assert_ne!(white(&icons[0]), white(&icons[2]));
+        }
+    }
+
+    #[test]
+    fn the_cross_and_the_dash_are_symmetric() {
         let size = 24;
-        let pixels = disc(size, Color::Green);
-        for y in 0..size {
-            for x in 0..size {
-                let mirrored = size - 1 - x;
-                assert_eq!(
-                    pixels[(y * size + x) as usize],
-                    pixels[(y * size + mirrored) as usize]
-                );
+        for color in [Color::Red, Color::Grey] {
+            let pixels = draw(size, color);
+            for y in 0..size {
+                for x in 0..size {
+                    let mirrored = size - 1 - x;
+                    assert_eq!(
+                        pixels[(y * size + x) as usize],
+                        pixels[(y * size + mirrored) as usize],
+                        "{color:?}"
+                    );
+                }
             }
         }
     }
