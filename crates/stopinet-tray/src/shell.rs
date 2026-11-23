@@ -46,11 +46,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SM_CXSMICON,
     SW_SHOWNORMAL, SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
     TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY,
-    WM_NULL, WNDCLASSEXW, WS_OVERLAPPED,
+    WM_NULL, WM_SETTINGCHANGE, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
-use crate::icon;
 use crate::view::{Action, Color, Entry, View};
+use crate::{icon, theme};
 
 /// Callback message of the notification area icon.
 const WM_TRAY: u32 = WM_APP + 1;
@@ -136,6 +136,7 @@ pub fn run(
         Ordering::Relaxed,
     );
     let window = create_window()?;
+    theme::follow_system(window);
     let notifier = Notifier(window as usize);
 
     let shown = latest
@@ -254,6 +255,14 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_SETTINGCHANGE => {
+            // SAFETY: for WM_SETTINGCHANGE `lparam` is null or points to the
+            // NUL-terminated name of the changed setting.
+            if unsafe { setting_name(lparam) }.as_deref() == Some("ImmersiveColorSet") {
+                theme::changed();
+            }
+            0
+        }
         WM_DESTROY => {
             set_icon(NIM_DELETE);
             // SAFETY: no preconditions.
@@ -267,6 +276,27 @@ unsafe extern "system" fn window_proc(
         // SAFETY: the arguments are those of this call.
         _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
     }
+}
+
+/// Name of the setting in a WM_SETTINGCHANGE message, if it has one.
+///
+/// # Safety
+///
+/// `lparam` must be null or point to a NUL-terminated UTF-16 string.
+unsafe fn setting_name(lparam: LPARAM) -> Option<String> {
+    let text = lparam as *const u16;
+    if text.is_null() {
+        return None;
+    }
+    // Names of interest are short; stop looking after 64 characters.
+    let mut length = 0;
+    // SAFETY: the string is NUL-terminated, and reading stops at the NUL.
+    while length < 64 && unsafe { *text.add(length) } != 0 {
+        length += 1;
+    }
+    // SAFETY: `length` characters were just read.
+    let units = unsafe { std::slice::from_raw_parts(text, length) };
+    Some(String::from_utf16_lossy(units))
 }
 
 impl App {

@@ -18,6 +18,7 @@
 
 mod icon;
 mod shell;
+mod theme;
 mod view;
 
 use std::path::Path;
