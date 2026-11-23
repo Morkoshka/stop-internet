@@ -1,6 +1,10 @@
 //! The Win32 side of the tray icon: a hidden window that owns the icon in
 //! the notification area, its menu and the message loop, plus the few
-//! shell calls the tray needs. All `unsafe` code of the tray is here.
+//! shell calls the tray needs. The `unsafe` code of the tray is here and in
+//! [`crate::theme`].
+//!
+//! The process is per-monitor DPI aware, so the cursor, the icon and the
+//! taskbar are all in physical pixels when the menu is placed.
 //!
 //! Everything about the window runs on the thread that calls [`run`].
 //! Other threads only post [`Notifier::notify`] to it.
@@ -18,7 +22,7 @@ use std::{mem, ptr};
 use stopinet_core::TRAY_WINDOW_CLASS;
 use stopinet_win::adapter::Win32Error;
 use windows_sys::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, ERROR_CANCELLED, GetLastError, HWND, LPARAM, LRESULT, WPARAM,
+    ERROR_ALREADY_EXISTS, ERROR_CANCELLED, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows_sys::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
@@ -30,25 +34,28 @@ use windows_sys::Win32::System::Com::{
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::CreateMutexW;
 use windows_sys::Win32::UI::HiDpi::{
-    DPI_AWARENESS_CONTEXT_SYSTEM_AWARE, SetProcessDpiAwarenessContext,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, GetSystemMetricsForDpi,
+    SetProcessDpiAwarenessContext,
 };
 use windows_sys::Win32::UI::Shell::{
-    NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION,
-    NIN_SELECT, NOTIFYICON_VERSION_4, NOTIFYICONDATAW, SEE_MASK_NOASYNC, SHELLEXECUTEINFOW,
-    Shell_NotifyIconW, ShellExecuteExW,
+    ABE_BOTTOM, ABE_LEFT, ABE_RIGHT, ABE_TOP, ABM_GETTASKBARPOS, APPBARDATA, NIF_ICON, NIF_MESSAGE,
+    NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NIM_SETVERSION, NIN_SELECT,
+    NOTIFYICON_VERSION_4, NOTIFYICONDATAW, NOTIFYICONIDENTIFIER, SEE_MASK_NOASYNC, SHAppBarMessage,
+    SHELLEXECUTEINFOW, Shell_NotifyIconGetRect, Shell_NotifyIconW, ShellExecuteExW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     ChangeWindowMessageFilterEx, CreateIconIndirect, CreatePopupMenu, CreateWindowExW,
-    DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetSystemMetrics, HICON, HMENU, ICONINFO, InsertMenuItemW, MB_ICONWARNING, MB_OK,
-    MB_SETFOREGROUND, MENUITEMINFOW, MFS_CHECKED, MFS_DISABLED, MFT_RADIOCHECK, MFT_SEPARATOR,
-    MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING, MIIM_SUBMENU, MSG, MSGFLT_ALLOW, MessageBoxW,
-    PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SM_CXSMICON,
-    SW_SHOWNORMAL, SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
-    TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY,
-    WM_NULL, WM_SETTINGCHANGE, WNDCLASSEXW, WS_OVERLAPPED,
+    DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos,
+    GetMessageW, HICON, HMENU, ICONINFO, InsertMenuItemW, MB_ICONWARNING, MB_OK, MB_SETFOREGROUND,
+    MENUITEMINFOW, MFS_CHECKED, MFS_DISABLED, MFT_RADIOCHECK, MFT_SEPARATOR, MIIM_FTYPE, MIIM_ID,
+    MIIM_STATE, MIIM_STRING, MIIM_SUBMENU, MSG, MSGFLT_ALLOW, MessageBoxW, PostMessageW,
+    PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SM_CXSMICON, SW_SHOWNORMAL,
+    SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTALIGN,
+    TPM_RIGHTBUTTON, TPM_VERTICAL, TPMPARAMS, TrackPopupMenuEx, TranslateMessage, WM_APP,
+    WM_CONTEXTMENU, WM_DESTROY, WM_NULL, WM_SETTINGCHANGE, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
+use crate::place::{self, Edge, Placement, Rect};
 use crate::view::{Action, Color, Entry, View};
 use crate::{icon, theme};
 
@@ -124,10 +131,7 @@ pub fn run(
     handler: impl Fn(Action, Notifier) + 'static,
 ) -> Result<(), Win32Error> {
     // SAFETY: no preconditions; fails harmlessly if already set.
-    unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE) };
-    // SAFETY: no preconditions.
-    let size = unsafe { GetSystemMetrics(SM_CXSMICON) }.max(16);
-    let icons = Icons::create(size)?;
+    unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
 
     let taskbar = wide("TaskbarCreated");
     // SAFETY: `taskbar` is NUL-terminated.
@@ -137,6 +141,10 @@ pub fn run(
     );
     let window = create_window()?;
     theme::follow_system(window);
+    // SAFETY: `window` is ours. The icon gets the size for the DPI of the
+    // monitor of the window, the primary one.
+    let size = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForWindow(window)) }.max(16);
+    let icons = Icons::create(size)?;
     let notifier = Notifier(window as usize);
 
     let shown = latest
@@ -240,12 +248,11 @@ unsafe extern "system" fn window_proc(
     match message {
         WM_TRAY => {
             // With NOTIFYICON_VERSION_4 the event is in the low word of
-            // `lparam` and the anchor point in `wparam`.
+            // `lparam`. The anchor point in `wparam` is not used: the menu
+            // is placed from the cursor, the icon and the taskbar.
             let event = (lparam & 0xffff) as u32;
             if matches!(event, WM_CONTEXTMENU | NIN_SELECT | NIN_KEYSELECT) {
-                let x = i32::from((wparam & 0xffff) as u16 as i16);
-                let y = i32::from(((wparam >> 16) & 0xffff) as u16 as i16);
-                show_menu(window, x, y);
+                show_menu(window);
             }
             0
         }
@@ -347,7 +354,7 @@ fn set_icon(command: u32) {
     }
 }
 
-fn show_menu(window: HWND, x: i32, y: i32) {
+fn show_menu(window: HWND) {
     let Some((view, handler)) = with_app(|app| (app.shown.clone(), Rc::clone(&app.handler))) else {
         return;
     };
@@ -355,21 +362,35 @@ fn show_menu(window: HWND, x: i32, y: i32) {
     let Some(menu) = Menu::build(&view.menu(), &mut actions) else {
         return;
     };
+    let placement = menu_placement(window);
+    let mut flags = TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON;
+    if placement.right_aligned {
+        flags |= TPM_RIGHTALIGN;
+    }
+    if placement.bottom_aligned {
+        flags |= TPM_BOTTOMALIGN;
+    }
+    if placement.vertical {
+        flags |= TPM_VERTICAL;
+    }
+    let exclude = placement.exclude;
+    let params = TPMPARAMS {
+        cbSize: mem::size_of::<TPMPARAMS>() as u32,
+        rcExclude: RECT {
+            left: exclude.left,
+            top: exclude.top,
+            right: exclude.right,
+            bottom: exclude.bottom,
+        },
+    };
     // SAFETY: `window` is ours. Without this the menu does not close when
     // the user clicks elsewhere.
     unsafe { SetForegroundWindow(window) };
-    // SAFETY: `menu` is a valid popup menu and `window` its owner. The call
-    // runs a modal loop and returns the chosen command or 0.
-    let chosen = unsafe {
-        TrackPopupMenuEx(
-            menu.0,
-            TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN,
-            x,
-            y,
-            window,
-            ptr::null(),
-        )
-    };
+    // SAFETY: `menu` is a valid popup menu and `window` its owner, `params`
+    // outlives the call. It runs a modal loop and returns the chosen
+    // command or 0.
+    let chosen =
+        unsafe { TrackPopupMenuEx(menu.0, flags, placement.x, placement.y, window, &params) };
     // SAFETY: as documented for menus of notification area icons.
     unsafe { PostMessageW(window, WM_NULL, 0, 0) };
     drop(menu);
@@ -385,6 +406,63 @@ fn show_menu(window: HWND, x: i32, y: i32) {
         },
         Some(action) => handler(action, Notifier(window as usize)),
         None => {}
+    }
+}
+
+/// Where the menu opens, see [`place`].
+fn menu_placement(window: HWND) -> Placement {
+    let mut cursor = POINT { x: 0, y: 0 };
+    // SAFETY: `cursor` is a valid out pointer; on failure it stays at 0, 0.
+    unsafe { GetCursorPos(&mut cursor) };
+    place::place((cursor.x, cursor.y), icon_rect(window), taskbar())
+}
+
+/// The icon in the notification area, or the overflow button if it is
+/// hidden there.
+fn icon_rect(window: HWND) -> Option<Rect> {
+    let id = NOTIFYICONIDENTIFIER {
+        cbSize: mem::size_of::<NOTIFYICONIDENTIFIER>() as u32,
+        hWnd: window,
+        uID: ICON_ID,
+        // SAFETY: an all-zero GUID means "identified by window and id".
+        guidItem: unsafe { mem::zeroed() },
+    };
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+    };
+    // SAFETY: `id` and `rect` are valid for the call.
+    let found = unsafe { Shell_NotifyIconGetRect(&id, &mut rect) } == 0;
+    found.then(|| to_rect(&rect))
+}
+
+/// The taskbar and the screen edge it is on.
+fn taskbar() -> Option<(Rect, Edge)> {
+    // SAFETY: `APPBARDATA` is plain data.
+    let mut data: APPBARDATA = unsafe { mem::zeroed() };
+    data.cbSize = mem::size_of::<APPBARDATA>() as u32;
+    // SAFETY: `data` is valid for the call, which fills `rc` and `uEdge`.
+    if unsafe { SHAppBarMessage(ABM_GETTASKBARPOS, &mut data) } == 0 {
+        return None;
+    }
+    let edge = match data.uEdge {
+        ABE_LEFT => Edge::Left,
+        ABE_TOP => Edge::Top,
+        ABE_RIGHT => Edge::Right,
+        ABE_BOTTOM => Edge::Bottom,
+        _ => return None,
+    };
+    Some((to_rect(&data.rc), edge))
+}
+
+fn to_rect(rect: &RECT) -> Rect {
+    Rect {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
     }
 }
 

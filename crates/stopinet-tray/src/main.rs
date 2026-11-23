@@ -1,10 +1,13 @@
 //! Tray icon of stop-internet: shows the protection status and switches
 //! modes through the named pipe of the service.
 //!
-//! - Green: protected, the internet works through the VPN client. Red:
-//!   blocked, because the tunnel is down in tunnel-only mode, or the
-//!   service cannot be asked. Grey: "normal internet", protection is off.
-//! - The menu switches between tunnel-only and proxy mode directly. For
+//! - A green shield with a check mark: protected, the internet works
+//!   through the VPN client. A red one with a cross: blocked, because the
+//!   tunnel is down in tunnel-only mode, or the service cannot be asked. A
+//!   grey one with a dash: "normal internet", protection is off.
+//! - The menu follows the dark or light theme of Windows and opens to the
+//!   right of the cursor, outside the taskbar. It switches between
+//!   tunnel-only and proxy mode directly. For
 //!   "normal internet" the tray starts itself again with administrator
 //!   rights through a UAC prompt, as `stopinet-tray.exe --normal <minutes>`;
 //!   that instance only sends the request and shows a message if it fails.
@@ -17,6 +20,7 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 mod icon;
+mod place;
 mod shell;
 mod theme;
 mod view;
