@@ -25,3 +25,23 @@ impl WideString {
         self.0.as_mut_ptr()
     }
 }
+
+/// Converts a UTF-16 buffer up to its first NUL.
+pub(crate) fn from_wide(buffer: &[u16]) -> String {
+    let end = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+    String::from_utf16_lossy(&buffer[..end])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip_stops_at_nul() {
+        let wide = WideString::new("happ-default-tun");
+        assert_eq!(wide.0.last(), Some(&0));
+        let mut buffer = [0u16; 32];
+        buffer[..wide.0.len()].copy_from_slice(&wide.0);
+        assert_eq!(from_wide(&buffer), "happ-default-tun");
+    }
+}
