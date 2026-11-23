@@ -213,8 +213,13 @@ impl Policy {
                     // Without TUN the proxy core finds its server through the
                     // system resolver, so DNS has to work. The router and the
                     // provider see the names programs look up; their traffic
-                    // stays blocked unless it goes through the proxy.
-                    rules.push(Rule::session(Action::Permit, Matcher::SystemDns));
+                    // stays blocked unless it goes through the proxy. With the
+                    // tunnel up, DNS goes through the tunnel, and this rule
+                    // would let Windows send the same queries to the router
+                    // as well.
+                    if tunnel == TunnelState::Down {
+                        rules.push(Rule::session(Action::Permit, Matcher::SystemDns));
+                    }
                 }
             }
         }
@@ -398,16 +403,19 @@ allow_lan = {allow_lan}
     }
 
     #[test]
-    fn only_proxy_mode_lets_the_system_resolver_out() {
+    fn only_proxy_mode_without_the_tunnel_lets_the_system_resolver_out() {
         let config = config(false);
+        let proxy = Policy::build(&config, Mode::Proxy, TunnelState::Down);
+        assert!(proxy.permits(&Matcher::SystemDns));
+        assert!(
+            proxy
+                .session()
+                .any(|r| r.matcher == Matcher::SystemDns && r.action == Action::Permit)
+        );
+        // With the tunnel up, DNS goes through the tunnel only.
+        let proxy = Policy::build(&config, Mode::Proxy, TunnelState::Up);
+        assert!(!proxy.permits(&Matcher::SystemDns));
         for state in TunnelState::ALL {
-            let proxy = Policy::build(&config, Mode::Proxy, state);
-            assert!(proxy.permits(&Matcher::SystemDns), "{state:?}");
-            assert!(
-                proxy
-                    .session()
-                    .any(|r| r.matcher == Matcher::SystemDns && r.action == Action::Permit)
-            );
             let tunnel = Policy::build(&config, Mode::TunnelOnly, state);
             assert!(!tunnel.permits(&Matcher::SystemDns), "{state:?}");
         }
