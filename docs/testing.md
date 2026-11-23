@@ -13,7 +13,16 @@ with traffic captures comes with step 7.
 
 - Build: `cargo build --release`. Run the commands below from the
   repository folder in an **elevated** PowerShell, and keep that window open
-  for the whole test. `stopinet` below means `.\target\release\stopinet.exe`.
+  for the whole test. To make the short `stopinet` command work in that
+  window, run this after the install (step A1):
+
+  ```powershell
+  Set-Alias stopinet 'C:\Program Files\stop-internet\stopinet.exe'
+  ```
+
+  It is an alias for the current PowerShell window only and changes nothing
+  in the system. Before the install, use `.\target\release\stopinet.exe`
+  instead of `stopinet`.
 - Put your configuration in `config\stopinet.local.toml` (ignored by git)
   and check it with a trial first: `.\target\release\stopinet.exe trial
   --config config\stopinet.local.toml`.
