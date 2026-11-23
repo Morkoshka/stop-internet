@@ -266,14 +266,28 @@ know, so a newer service does not break an older tray.
 **Tray icon.** `stopinet-tray.exe` runs in the session of the user, without
 administrator rights:
 
-- It asks the service for its state once a second and shows it as the color
-  of the icon and in the tooltip. When the service cannot be asked, the icon
-  is red and the tooltip says why: not installed, stopped, an older version
-  without the pipe, or the pipe held by another program.
-- The menu, in Russian, shows the state, switches between "tunnel only" and
-  proxy mode directly, offers "normal internet" for each duration of the
-  configuration, opens the service log and closes the icon. Closing the icon
-  does not change the protection.
+- It asks the service for its state once a second and shows it in the icon
+  and the tooltip. The icon is a shield with a white sign, so the states
+  differ by shape as well as by color, also next to round icons of other
+  programs: a green one with a check mark, a red one with a cross, a grey
+  one with a dash. When the service cannot be asked, the icon is red and the
+  tooltip says why: not installed, stopped, an older version without the
+  pipe, or the pipe held by another program.
+- The menu, in Russian, shows the state on two short lines, switches
+  between "tunnel only" and proxy mode directly, offers "normal internet"
+  for each duration of the configuration, opens the service log and closes
+  the icon. Closing the icon does not change the protection.
+- The menu opens with its left edge at the cursor and its bottom edge on
+  the taskbar (beside it for a top or side taskbar, above the icon in the
+  overflow area), so the taskbar never covers it. The cursor, the icon
+  rectangle (`Shell_NotifyIconGetRect`) and the taskbar
+  (`ABM_GETTASKBARPOS`) are all in physical pixels: the tray is per-monitor
+  DPI aware.
+- The menu is dark or light like the app theme in the Windows settings.
+  Win32 has no documented API for dark popup menus, so the tray uses the
+  functions of `uxtheme.dll` that Windows itself uses, by ordinal, and only
+  on Windows 10 1903 or later, where their signatures are known. Without
+  them the menu stays light.
 - For "normal internet" the tray starts itself again through a UAC prompt,
   as `stopinet-tray.exe --normal <minutes>`. That instance only sends the
   request and shows a message if it fails. It is the tray and not
