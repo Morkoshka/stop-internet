@@ -1,0 +1,19 @@
+[package]
+name = "stopinet-cli"
+description = "Command-line tool of stop-internet"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "stopinet"
+path = "src/main.rs"
+
+[dependencies]
+stopinet-core.workspace = true
+
+[lints]
+workspace = true
