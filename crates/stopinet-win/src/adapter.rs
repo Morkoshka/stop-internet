@@ -9,7 +9,7 @@ use std::ptr;
 
 use stopinet_core::config::TunnelConfig;
 use stopinet_core::policy::TunnelState;
-use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS};
+use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS, GetLastError};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
     FreeMibTable, GetIfTable2, MIB_IF_ROW2, MIB_IF_TABLE2,
 };
@@ -53,6 +53,15 @@ pub struct Win32Error {
     pub operation: &'static str,
     /// Its return code.
     pub code: u32,
+}
+
+impl Win32Error {
+    /// The error of the last failed call on this thread.
+    pub(crate) fn last(operation: &'static str) -> Self {
+        // SAFETY: no preconditions.
+        let code = unsafe { GetLastError() };
+        Self { operation, code }
+    }
 }
 
 impl fmt::Display for Win32Error {

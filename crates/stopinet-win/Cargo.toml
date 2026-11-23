@@ -1,6 +1,6 @@
 [package]
 name = "stopinet-win"
-description = "Windows integration of stop-internet: WFP engine and network adapters"
+description = "Windows integration of stop-internet: WFP engine, network adapters and the named pipe"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,13 @@ publish = false
 
 [dependencies]
 stopinet-core.workspace = true
-windows-sys.workspace = true
+windows-service.workspace = true
+windows-sys = { workspace = true, features = [
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
 
 [lints]
 workspace = true
