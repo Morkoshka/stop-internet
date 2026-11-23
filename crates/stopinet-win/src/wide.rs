@@ -20,6 +20,11 @@ impl WideString {
         self.0.as_ptr()
     }
 
+    /// Size in bytes, the final NUL included.
+    pub(crate) fn byte_len(&self) -> u32 {
+        (self.0.len() * 2) as u32
+    }
+
     /// For API structs that declare `PWSTR` but only read the string.
     pub(crate) fn as_mut_ptr(&mut self) -> *mut u16 {
         self.0.as_mut_ptr()

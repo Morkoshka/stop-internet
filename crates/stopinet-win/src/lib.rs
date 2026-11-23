@@ -1,11 +1,13 @@
 //! Windows integration of stop-internet: the WFP firewall, the persistent
-//! baseline, the tunnel adapter lookup, interface notifications and the
-//! named pipe between the service and its clients.
+//! baseline, the tunnel adapter lookup, interface notifications, the named
+//! pipe between the service and its clients, and what the installer does
+//! about the tray icon.
 //!
 //! The `unsafe` code of the service and the CLI lives in this crate, in the
-//! [`wfp`], [`adapter`], [`watch`], [`clock`], [`security`] and [`pipe`]
-//! modules, apart from what the `windows-service` crate generates for the
-//! service entry point. The tray icon keeps its window code to itself.
+//! [`wfp`], [`adapter`], [`watch`], [`clock`], [`security`], [`pipe`] and
+//! [`tray`] modules, apart from what the `windows-service` crate generates
+//! for the service entry point. The tray icon keeps its window code to
+//! itself.
 //! Every unsafe block states why it is sound.
 
 #![cfg(windows)]
@@ -18,6 +20,7 @@ pub mod persistent;
 pub mod pipe;
 pub mod plan;
 pub mod security;
+pub mod tray;
 pub mod watch;
 pub mod wfp;
 mod wide;

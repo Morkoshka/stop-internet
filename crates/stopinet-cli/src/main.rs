@@ -34,14 +34,15 @@ Usage:
   stopinet install [--config <file>] [--session-only]
       Copy the programs to C:\\Program Files\\stop-internet, the configuration
       to C:\\ProgramData\\stop-internet, register the service and start it.
+      The tray icon starts at every sign-in and right away.
       Without --config the installed configuration is kept. With
       --session-only the service keeps nothing persistent: stopping it
       removes every filter. Run again to update, or to switch between
       session-only and persistent.
 
   stopinet uninstall
-      Stop and remove the service, every filter and the programs. The
-      configuration and the log stay.
+      Stop and remove the service, every filter, the tray icon and the
+      programs. The configuration and the log stay.
 
   stopinet panic
       Emergency: stop the service and remove every filter, the persistent

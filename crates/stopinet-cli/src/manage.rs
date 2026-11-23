@@ -3,16 +3,19 @@
 //! - `install` copies the programs to `C:\Program Files\stop-internet` (only
 //!   administrators can change them there, which matters for a LocalSystem
 //!   service), the configuration to the data folder, registers the service
-//!   with restart on failure and starts it.
-//! - `uninstall` removes the service, every WFP object and the programs.
+//!   with restart on failure and starts it. The tray icon starts at every
+//!   sign-in of every user, and right away in this session.
+//! - `uninstall` removes the service, every WFP object, the autostart of the
+//!   tray icon and the programs.
 //! - `panic` stops the service and removes every WFP object.
 //! - `status` reads the state; it changes nothing. The mode comes from the
 //!   service over its named pipe.
 
 use std::ffi::OsString;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,7 +23,7 @@ use stopinet_core::config::{Config, DATA_DIR, DEFAULT_PATH, LOG_PATH};
 use stopinet_core::{SERVICE_NAME, SESSION_ONLY_ARG, TunnelState};
 use stopinet_win::persistent::{inventory, remove_all};
 use stopinet_win::security::restrict_to_admins;
-use stopinet_win::{Lifetime, RemovalReport, observe_tunnel};
+use stopinet_win::{Lifetime, RemovalReport, observe_tunnel, tray};
 use windows_service::service::{
     Service, ServiceAccess, ServiceAction, ServiceActionType, ServiceDependency,
     ServiceErrorControl, ServiceFailureActions, ServiceFailureResetPeriod, ServiceInfo,
@@ -33,7 +36,15 @@ use crate::{Options, explain};
 const INSTALL_DIR: &str = r"C:\Program Files\stop-internet";
 const SERVICE_EXE: &str = "stopinet-service.exe";
 const CLI_EXE: &str = "stopinet.exe";
+const TRAY_EXE: &str = "stopinet-tray.exe";
 const DISPLAY_NAME: &str = "stop-internet";
+
+/// Started from an elevated terminal, Explorer hands the program to the
+/// running shell, which starts it without administrator rights.
+const EXPLORER: &str = r"C:\Windows\explorer.exe";
+
+/// How long running tray icons get to close.
+const TRAY_CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 const DESCRIPTION: &str =
     "Fail-closed kill switch for TUN-based VPN clients: blocks traffic that bypasses the tunnel.";
 
@@ -53,6 +64,7 @@ const STATE_TIMEOUT: Duration = Duration::from_secs(30);
 const STATE_POLL: Duration = Duration::from_millis(250);
 
 const ERROR_ACCESS_DENIED: i32 = 5;
+const ERROR_SHARING_VIOLATION: i32 = 32;
 const ERROR_SERVICE_NOT_ACTIVE: i32 = 1062;
 const ERROR_SERVICE_DOES_NOT_EXIST: i32 = 1060;
 
@@ -80,19 +92,24 @@ pub fn install(options: &Options) -> Result<(), String> {
         }
     };
     let source_dir = current_dir()?;
-    if !source_dir.join(SERVICE_EXE).is_file() {
-        return Err(format!(
-            "{SERVICE_EXE} is not next to {CLI_EXE}. Build both with `cargo build --release` \
-             and run target\\release\\{CLI_EXE}."
-        ));
+    for exe in [SERVICE_EXE, TRAY_EXE] {
+        if !source_dir.join(exe).is_file() {
+            return Err(format!(
+                "{exe} is not next to {CLI_EXE}. Build all programs with \
+                 `cargo build --release` and run target\\release\\{CLI_EXE}."
+            ));
+        }
     }
-
     let manager = ServiceManager::local_computer(
         None::<&str>,
         ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
     )
     .map_err(|e| scm_error("cannot open the service manager", &e))?;
     let existing = open_service(&manager, MANAGE_ACCESS)?;
+    // A running tray icon locks its program. Close it before the service
+    // stops, so that a failure here leaves the protection as it was.
+    let installed_tray = Path::new(INSTALL_DIR).join(TRAY_EXE);
+    close_tray(&installed_tray)?;
     if let Some(service) = &existing {
         stop(service)?;
     }
@@ -106,10 +123,15 @@ pub fn install(options: &Options) -> Result<(), String> {
     }
 
     fs::create_dir_all(INSTALL_DIR).map_err(|e| format!("cannot create {INSTALL_DIR}: {e}"))?;
-    for exe in [SERVICE_EXE, CLI_EXE] {
+    for exe in [SERVICE_EXE, CLI_EXE, TRAY_EXE] {
         copy_program(&source_dir.join(exe), &Path::new(INSTALL_DIR).join(exe))?;
     }
     println!("programs copied to {INSTALL_DIR}");
+    // The service protects without the icon, so this is not fatal.
+    match tray::register_autostart(&installed_tray) {
+        Ok(()) => println!("tray icon set to start at every sign-in"),
+        Err(error) => println!("cannot set the tray icon to start at sign-in: {error}"),
+    }
 
     if options.session_only {
         // A baseline left by a full install would keep blocking and would
@@ -151,6 +173,7 @@ pub fn install(options: &Options) -> Result<(), String> {
     match wait_for(&service, |s| s != ServiceState::StartPending)? {
         ServiceState::Running => {
             println!("service running. Log: {LOG_PATH}");
+            start_tray(&installed_tray);
             Ok(())
         }
         state => Err(format!(
@@ -162,7 +185,20 @@ pub fn install(options: &Options) -> Result<(), String> {
 pub fn uninstall() -> Result<(), String> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
         .map_err(|e| scm_error("cannot open the service manager", &e))?;
-    match open_service(&manager, MANAGE_ACCESS)? {
+    // Without administrator rights this fails before anything changes.
+    let existing = open_service(&manager, MANAGE_ACCESS)?;
+
+    let installed_tray = Path::new(INSTALL_DIR).join(TRAY_EXE);
+    if let Err(error) = close_tray(&installed_tray) {
+        println!("{error}");
+    }
+    match tray::unregister_autostart() {
+        Ok(true) => println!("tray icon no longer starts at sign-in"),
+        Ok(false) => {}
+        Err(error) => println!("cannot remove the autostart of the tray icon: {error}"),
+    }
+
+    match existing {
         Some(service) => {
             stop(&service)?;
             service
@@ -179,7 +215,7 @@ pub fn uninstall() -> Result<(), String> {
     let current = std::env::current_exe()
         .ok()
         .and_then(|p| p.canonicalize().ok());
-    for exe in [SERVICE_EXE, CLI_EXE] {
+    for exe in [SERVICE_EXE, CLI_EXE, TRAY_EXE] {
         let path = Path::new(INSTALL_DIR).join(exe);
         if path.canonicalize().ok().is_some_and(|p| Some(p) == current) {
             println!("{} is running now; delete it by hand", path.display());
@@ -450,6 +486,50 @@ fn copy_program(source: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Closes the running tray icons and waits until their program can be
+/// replaced or deleted.
+fn close_tray(program: &Path) -> Result<(), String> {
+    let asked = tray::close_running();
+    let deadline = Instant::now() + TRAY_CLOSE_TIMEOUT;
+    while in_use(program) {
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "{} is still running, probably in the session of another user. Close the \
+                 stop-internet icon there and run this again.",
+                program.display()
+            ));
+        }
+        thread::sleep(STATE_POLL);
+    }
+    if asked > 0 {
+        println!("tray icon closed");
+    }
+    Ok(())
+}
+
+/// Whether a running process holds the program. Opening for writing changes
+/// nothing: the file is not truncated.
+fn in_use(program: &Path) -> bool {
+    match OpenOptions::new().write(true).open(program) {
+        Err(error) => error.raw_os_error() == Some(ERROR_SHARING_VIOLATION),
+        Ok(_) => false,
+    }
+}
+
+/// Starts the tray icon in this session without administrator rights.
+fn start_tray(program: &Path) {
+    match Command::new(EXPLORER).arg(program).spawn() {
+        Ok(_) => println!(
+            "tray icon started. If it does not appear, sign out and in again, or start {} \
+             with Win+R",
+            program.display()
+        ),
+        Err(error) => {
+            println!("cannot start the tray icon ({error}); it starts at the next sign-in")
+        }
+    }
+}
+
 fn current_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot find this program: {e}"))?;
     exe.parent()
@@ -519,6 +599,20 @@ mod tests {
             info.dependencies.as_slice(),
             [ServiceDependency::Service(name)] if name == BFE_SERVICE
         ));
+    }
+
+    #[test]
+    fn a_missing_program_is_not_in_use() {
+        let missing =
+            std::env::temp_dir().join(format!("stopinet-missing-{}.exe", std::process::id()));
+        assert!(!in_use(&missing));
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn a_running_program_is_in_use() {
+        let this = std::env::current_exe().unwrap();
+        assert!(in_use(&this));
     }
 
     #[test]
