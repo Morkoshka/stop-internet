@@ -1,7 +1,7 @@
 //! The Win32 side of the tray icon: a hidden window that owns the icon in
 //! the notification area, its menu and the message loop, plus the few
-//! shell calls the tray needs. The `unsafe` code of the tray is here and in
-//! [`crate::theme`].
+//! shell calls the tray needs. The `unsafe` code of the tray is here, in
+//! [`crate::theme`], [`crate::proxy`] and [`crate::settings`].
 //!
 //! The process is per-monitor DPI aware, so the cursor, the icon and the
 //! taskbar are all in physical pixels when the menu is placed.
@@ -15,7 +15,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::{FromRawHandle, OwnedHandle};
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::{mem, ptr};
 
@@ -79,6 +79,8 @@ struct App {
     latest: Arc<Mutex<View>>,
     /// What the icon shows now.
     shown: View,
+    /// Whether the mode follows the system proxy, for the menu.
+    follow: Arc<AtomicBool>,
     handler: Handler,
 }
 
@@ -123,10 +125,12 @@ pub fn first_instance() -> Option<Instance> {
 }
 
 /// Creates the window and the icon, calls `start` with a [`Notifier`] and
-/// runs the message loop until the icon is closed. `handler` gets the menu
-/// choices other than [`Action::Close`], on this thread.
+/// runs the message loop until the icon is closed. `follow` is shown in the
+/// menu. `handler` gets the menu choices other than [`Action::Close`], on
+/// this thread.
 pub fn run(
     latest: Arc<Mutex<View>>,
+    follow: Arc<AtomicBool>,
     start: impl FnOnce(Notifier),
     handler: impl Fn(Action, Notifier) + 'static,
 ) -> Result<(), Win32Error> {
@@ -157,6 +161,7 @@ pub fn run(
             icons,
             latest,
             shown,
+            follow,
             handler: Rc::new(handler),
         });
     });
@@ -355,11 +360,17 @@ fn set_icon(command: u32) {
 }
 
 fn show_menu(window: HWND) {
-    let Some((view, handler)) = with_app(|app| (app.shown.clone(), Rc::clone(&app.handler))) else {
+    let Some((view, follow, handler)) = with_app(|app| {
+        (
+            app.shown.clone(),
+            app.follow.load(Ordering::Relaxed),
+            Rc::clone(&app.handler),
+        )
+    }) else {
         return;
     };
     let mut actions = Vec::new();
-    let Some(menu) = Menu::build(&view.menu(), &mut actions) else {
+    let Some(menu) = Menu::build(&view.menu(follow), &mut actions) else {
         return;
     };
     let placement = menu_placement(window);
@@ -730,7 +741,7 @@ fn init_com() {
     };
 }
 
-fn wide(text: &str) -> Vec<u16> {
+pub(crate) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain([0]).collect()
 }
 
@@ -738,7 +749,7 @@ fn wide_os(text: &OsStr) -> Vec<u16> {
     text.encode_wide().chain([0]).collect()
 }
 
-fn last_error(operation: &'static str) -> Win32Error {
+pub(crate) fn last_error(operation: &'static str) -> Win32Error {
     // SAFETY: no preconditions.
     let code = unsafe { GetLastError() };
     Win32Error { operation, code }
@@ -769,14 +780,16 @@ mod tests {
             durations: vec![15, 60, 0],
         });
         let mut actions = Vec::new();
-        assert!(Menu::build(&view.menu(), &mut actions).is_some());
-        // Two modes, three durations, the log and close.
-        assert_eq!(actions.len(), 7);
+        assert!(Menu::build(&view.menu(true), &mut actions).is_some());
+        // The automatic choice, two modes, three durations, the log and
+        // close.
+        assert_eq!(actions.len(), 8);
+        assert_eq!(actions.first(), Some(&Action::FollowProxy(false)));
         assert_eq!(actions.last(), Some(&Action::Close));
 
         let mut actions = Vec::new();
         let view = View::Unreachable(Problem::NotRunning);
-        assert!(Menu::build(&view.menu(), &mut actions).is_some());
-        assert_eq!(actions.len(), 4);
+        assert!(Menu::build(&view.menu(false), &mut actions).is_some());
+        assert_eq!(actions.len(), 5);
     }
 }

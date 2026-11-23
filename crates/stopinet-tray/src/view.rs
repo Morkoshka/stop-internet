@@ -1,5 +1,20 @@
 //! What the tray shows: the color of the icon, the tooltip and the menu, in
 //! Russian. No system calls, so all of it is covered by unit tests.
+//!
+//! The menu:
+//!
+//! ```text
+//! Только туннель            state, two lines
+//! интернет через VPN
+//! ──────────────────
+//! ✓ Автоматически           follow the system proxy
+//! ● Только туннель          the mode, as the service reports it
+//!   Прокси
+//!   Обычный интернет  >     one item per configured duration
+//! ──────────────────
+//!   Журнал службы
+//!   Закрыть значок
+//! ```
 
 use stopinet_core::control::{Choice, Refusal, Remaining};
 use stopinet_core::policy::{Mode, TunnelState};
@@ -55,8 +70,12 @@ pub enum Color {
 /// What a menu item does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    /// Switch the mode; normal internet goes through a UAC prompt.
+    /// Switch the mode; normal internet goes through a UAC prompt. A
+    /// protected mode chosen this way stops following the system proxy.
     Choose(Choice),
+    /// Start or stop following the system proxy with the protected mode,
+    /// see [`crate::auto`].
+    FollowProxy(bool),
     /// Open the log of the service.
     OpenLog,
     /// Close the tray icon. Protection is not affected.
@@ -72,7 +91,7 @@ pub enum Entry {
     Item {
         label: String,
         action: Action,
-        /// Shown with a round mark.
+        /// Shown with a round mark for a mode, with a check mark otherwise.
         checked: bool,
         enabled: bool,
     },
@@ -132,7 +151,8 @@ impl View {
         format!("stop-internet\n{title}\n{detail}")
     }
 
-    pub fn menu(&self) -> Vec<Entry> {
+    /// The menu; `follow` says whether the mode follows the system proxy.
+    pub fn menu(&self, follow: bool) -> Vec<Entry> {
         let (mode, durations, enabled) = match self {
             Self::Status(status) => (Some(status.mode), status.durations.as_slice(), true),
             Self::Unreachable(_) => (None, &[][..], false),
@@ -157,6 +177,12 @@ impl View {
             Entry::Text(title.into()),
             Entry::Text(detail),
             Entry::Separator,
+            Entry::Item {
+                label: "Автоматически".into(),
+                action: Action::FollowProxy(!follow),
+                checked: follow,
+                enabled,
+            },
             item("Только туннель", Choice::TunnelOnly),
             item("Прокси", Choice::Proxy),
             Entry::Submenu {
@@ -335,11 +361,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn menu_marks_the_mode_and_offers_the_configured_durations() {
-        let menu = status(Mode::Proxy, TunnelState::Up, None).menu();
-        let checked: Vec<&str> = menu
-            .iter()
+    fn checked(menu: &[Entry]) -> Vec<&str> {
+        menu.iter()
             .filter_map(|entry| match entry {
                 Entry::Item {
                     label,
@@ -348,8 +371,23 @@ mod tests {
                 } => Some(label.as_str()),
                 _ => None,
             })
-            .collect();
-        assert_eq!(checked, ["Прокси"]);
+            .collect()
+    }
+
+    fn follow_action(menu: &[Entry]) -> Option<Action> {
+        menu.iter().find_map(|entry| match entry {
+            Entry::Item {
+                action: action @ Action::FollowProxy(_),
+                ..
+            } => Some(*action),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn menu_marks_the_mode_and_offers_the_configured_durations() {
+        let menu = status(Mode::Proxy, TunnelState::Up, None).menu(false);
+        assert_eq!(checked(&menu), ["Прокси"]);
 
         let normal = menu
             .iter()
@@ -376,12 +414,23 @@ mod tests {
     }
 
     #[test]
+    fn the_automatic_choice_is_a_check_mark_that_toggles() {
+        let view = status(Mode::TunnelOnly, TunnelState::Up, None);
+        let on = view.menu(true);
+        assert_eq!(checked(&on), ["Автоматически", "Только туннель"]);
+        assert_eq!(follow_action(&on), Some(Action::FollowProxy(false)));
+        let off = view.menu(false);
+        assert_eq!(checked(&off), ["Только туннель"]);
+        assert_eq!(follow_action(&off), Some(Action::FollowProxy(true)));
+    }
+
+    #[test]
     fn without_the_service_only_the_log_and_close_work() {
-        let menu = View::Unreachable(Problem::NotRunning).menu();
+        let menu = View::Unreachable(Problem::NotRunning).menu(true);
         for entry in &menu {
             match entry {
                 Entry::Item {
-                    action: Action::Choose(_),
+                    action: Action::Choose(_) | Action::FollowProxy(_),
                     enabled,
                     ..
                 }

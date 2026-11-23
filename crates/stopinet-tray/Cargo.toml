@@ -13,6 +13,7 @@ stopinet-core.workspace = true
 stopinet-win.workspace = true
 windows-sys = { workspace = true, features = [
     "Win32_Graphics_Gdi",
+    "Win32_Networking_WinHttp",
     "Win32_System_Com",
     "Win32_System_LibraryLoader",
     "Win32_System_Threading",
