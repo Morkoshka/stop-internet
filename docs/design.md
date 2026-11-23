@@ -32,8 +32,8 @@ stop-internet protects against:
 - long-lived connections opened before the tunnel, for example the Windows
   push notification service, which otherwise stays outside the tunnel for the
   whole session;
-- DNS queries to the router or the ISP resolver, IPv6 and Teredo outside the
-  tunnel;
+- DNS queries to the router or the ISP resolver (except in proxy mode, see
+  [Modes](#modes)), IPv6 and Teredo outside the tunnel;
 - the VPN client, its core or stop-internet crashing;
 - forgetting that protection is off: "normal internet" is time-limited and
   every boot, wake-up and user logon returns to the protected mode.
@@ -73,21 +73,22 @@ flowchart LR
 | Ordinary app | TUN → happd → xray → TUN again → happd → physical adapter → VPN server |
 | Direct rule (rule sets) | xray → TUN → happd → physical adapter |
 | App excluded in Happ | TUN → happd → physical adapter, xray not involved, UDP included |
-| System proxy mode, no TUN | app → loopback proxy → xray → physical adapter |
+| System proxy mode, no TUN | app → loopback proxy → xray → physical adapter; xray finds the server through the system resolver |
 | Happ itself | happd keeps one connection of its own on the physical adapter |
 | Subscription updates | `Happ.exe` (the UI) connects directly, HTTPS; while connected this works through the rules for the tunnel |
 
 So with TUN, **only `happd.exe` needs the physical adapter**. In system proxy
-mode only `xray.exe` does. While Happ is disconnected, `Happ.exe` can update
-subscriptions only if it is in the `direct` list; then the provider sees the
-subscription server and the update checks of Happ.
+mode only `xray.exe` does, and the Windows DNS client for its DNS queries.
+While Happ is disconnected, `Happ.exe` can update subscriptions only if it is
+in the `direct` list; then the provider sees the subscription server and the
+update checks of Happ.
 
 ## Modes
 
 | Mode | Applications | VPN client on the physical adapter | Tray icon |
 |---|---|---|---|
 | Tunnel only (default) | through the tunnel | tunnel daemon, only while the tunnel is up | green / red |
-| Proxy | through the tunnel or the client's local proxy | tunnel daemon while the tunnel is up; proxy core always | green |
+| Proxy | through the tunnel or the client's local proxy | tunnel daemon while the tunnel is up; proxy core and DNS queries of the system resolver always | green |
 | Normal internet | anything | anything | grey |
 
 In every protected mode, applications from the `direct` list may use the
@@ -95,6 +96,13 @@ physical adapter (see [Excluded apps](#excluded-apps-when-the-tunnel-drops)),
 and loopback, DHCP and IPv6 neighbor discovery are allowed. In proxy mode
 the icon stays green with the tunnel down too: the proxy core may go out
 directly either way, and whether it runs is not checked.
+
+Without TUN the proxy core finds its server through the system resolver, so
+proxy mode also lets the Windows DNS client (`svchost.exe`) send queries to
+port 53. The router and the provider then see the names programs look up,
+not their traffic: whatever does not go through the proxy stays blocked. The
+browser does not look names up itself when it uses the proxy. Tunnel-only
+mode keeps DNS closed while the tunnel is down.
 
 "Normal internet" lowers protection, so switching to it needs an elevated
 administrator, which the tray gets through a UAC prompt. It lasts as long as
@@ -117,12 +125,13 @@ mode and state without touching the system.
 | 2 | permit traffic on the tunnel adapter | session | protected mode, tunnel up |
 | 3 | permit tunnel daemon (`happd.exe`) | session | protected mode, tunnel up |
 | 4 | permit proxy core (`xray.exe`) | session | proxy mode |
-| 5 | permit loopback | persistent | always |
-| 6 | permit DHCP and DHCPv6 | persistent | always |
-| 7 | permit IPv6 neighbor discovery | persistent | always |
-| 8 | permit apps from the `direct` list | persistent | always |
-| 9 | permit local network, DNS excluded | persistent | if `allow_lan` |
-| 10 | block everything | persistent | always |
+| 5 | permit DNS queries of the Windows DNS client (`svchost.exe`, remote port 53, outbound) | session | proxy mode |
+| 6 | permit loopback | persistent | always |
+| 7 | permit DHCP and DHCPv6 | persistent | always |
+| 8 | permit IPv6 neighbor discovery | persistent | always |
+| 9 | permit apps from the `direct` list | persistent | always |
+| 10 | permit local network, DNS excluded | persistent | if `allow_lan` |
+| 11 | block everything | persistent | always |
 
 Persistent rules never depend on the mode or the tunnel. They are what the
 Base Filtering Engine enforces by itself after a reboot or a service crash, so

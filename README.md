@@ -34,7 +34,8 @@ exactly when they are needed.
   game.
 - Fail-closed: if the VPN client, its core or stop-internet crashes, or the
   machine reboots, the block stays.
-- DNS to the router, IPv6 and Teredo outside the tunnel are blocked.
+- DNS to the router, IPv6 and Teredo outside the tunnel are blocked. Proxy
+  mode lets system DNS out, so that the proxy can find its server.
 - A tray icon shows the state and switches modes; turning protection off
   needs a UAC prompt and is time-limited.
 
