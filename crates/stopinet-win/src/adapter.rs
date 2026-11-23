@@ -7,6 +7,8 @@
 use std::fmt;
 use std::ptr;
 
+use stopinet_core::config::TunnelConfig;
+use stopinet_core::policy::TunnelState;
 use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
     FreeMibTable, GetIfTable2, MIB_IF_ROW2, MIB_IF_TABLE2,
@@ -18,6 +20,7 @@ use windows_sys::Win32::System::Registry::{
 };
 use windows_sys::core::GUID;
 
+use crate::plan::Environment;
 use crate::wide::{WideString, from_wide};
 
 /// Registry key of the network adapter device class.
@@ -82,6 +85,59 @@ pub fn find_tunnel(alias: &str, driver: &str) -> Result<TunnelLookup, Win32Error
         });
     }
     Ok(result)
+}
+
+/// The tunnel as the firewall sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Observation {
+    /// Up when the adapter exists, has the configured driver and is
+    /// operational.
+    pub state: TunnelState,
+    /// LUID of the adapter while it is up.
+    pub luid: Option<u64>,
+    /// Why the tunnel counts as down although an adapter was found, or why
+    /// the lookup failed.
+    pub note: Option<String>,
+}
+
+impl Observation {
+    /// Facts for [`Plan::build`](crate::plan::Plan::build).
+    pub fn environment(&self) -> Environment {
+        Environment {
+            tunnel_luid: self.luid,
+        }
+    }
+}
+
+/// Looks at the tunnel adapter described by the configuration.
+pub fn observe_tunnel(tunnel: &TunnelConfig) -> Observation {
+    observation(
+        find_tunnel(&tunnel.adapter_name, &tunnel.driver),
+        &tunnel.driver,
+    )
+}
+
+fn observation(lookup: Result<TunnelLookup, Win32Error>, driver: &str) -> Observation {
+    let down = |note: Option<String>| Observation {
+        state: TunnelState::Down,
+        luid: None,
+        note,
+    };
+    match lookup {
+        Ok(TunnelLookup::Found { luid, up: true }) => Observation {
+            state: TunnelState::Up,
+            luid: Some(luid),
+            note: None,
+        },
+        Ok(TunnelLookup::Found { up: false, .. }) => {
+            down(Some("adapter is not operational".into()))
+        }
+        Ok(TunnelLookup::Missing) => down(None),
+        Ok(TunnelLookup::WrongDriver { driver: found }) => down(Some(format!(
+            "adapter found, but its driver is '{found}', expected '{driver}'"
+        ))),
+        Err(error) => down(Some(error.to_string())),
+    }
 }
 
 /// Interface table from `GetIfTable2`, freed on drop.
@@ -216,6 +272,33 @@ impl Drop for RegKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_operational_adapter_is_up() {
+        let up = observation(Ok(TunnelLookup::Found { luid: 7, up: true }), "Wintun");
+        assert_eq!(up.state, TunnelState::Up);
+        assert_eq!(up.environment().tunnel_luid, Some(7));
+        assert_eq!(up.note, None);
+
+        let cases = [
+            Ok(TunnelLookup::Found { luid: 7, up: false }),
+            Ok(TunnelLookup::Missing),
+            Ok(TunnelLookup::WrongDriver {
+                driver: "tap0901".into(),
+            }),
+            Err(Win32Error {
+                operation: "GetIfTable2",
+                code: 8,
+            }),
+        ];
+        for lookup in cases {
+            let missing = matches!(lookup, Ok(TunnelLookup::Missing));
+            let seen = observation(lookup, "Wintun");
+            assert_eq!(seen.state, TunnelState::Down);
+            assert_eq!(seen.luid, None);
+            assert_eq!(seen.note.is_none(), missing);
+        }
+    }
 
     #[test]
     fn guid_format_matches_the_registry() {

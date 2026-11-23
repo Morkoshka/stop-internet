@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use stopinet_core::config::{self, Config};
 use stopinet_core::policy::{Mode, Policy, TunnelState};
-use stopinet_win::{Environment, Firewall, Plan, TunnelLookup, WfpError, find_tunnel};
+use stopinet_win::{Firewall, Plan, WfpError, observe_tunnel};
 
 const USAGE: &str = "\
 Usage:
@@ -106,38 +106,6 @@ fn policy(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// What the trial saw of the tunnel.
-#[derive(Debug)]
-struct Observation {
-    state: TunnelState,
-    luid: Option<u64>,
-    note: Option<String>,
-}
-
-fn observe(config: &Config) -> Observation {
-    let down = |note: Option<String>| Observation {
-        state: TunnelState::Down,
-        luid: None,
-        note,
-    };
-    match find_tunnel(&config.tunnel.adapter_name, &config.tunnel.driver) {
-        Ok(TunnelLookup::Found { luid, up: true }) => Observation {
-            state: TunnelState::Up,
-            luid: Some(luid),
-            note: None,
-        },
-        Ok(TunnelLookup::Found { up: false, .. }) => {
-            down(Some("adapter is not operational".into()))
-        }
-        Ok(TunnelLookup::Missing) => down(None),
-        Ok(TunnelLookup::WrongDriver { driver }) => down(Some(format!(
-            "adapter found, but its driver is '{driver}', expected '{}'",
-            config.tunnel.driver
-        ))),
-        Err(error) => down(Some(error.to_string())),
-    }
-}
-
 fn trial(args: &[String]) -> Result<(), String> {
     let options = parse(args)?;
     if options.mode == Mode::Normal {
@@ -163,18 +131,13 @@ fn trial(args: &[String]) -> Result<(), String> {
     let mut last_note: Option<String> = None;
 
     while Instant::now() < deadline {
-        let now = observe(&config);
+        let now = observe_tunnel(&config.tunnel);
         let elapsed = started.elapsed().as_secs();
 
         let changed = applied != Some((now.state, now.luid));
         if changed {
             let policy = Policy::build(&config, options.mode, now.state);
-            let plan = Plan::build(
-                &policy,
-                &Environment {
-                    tunnel_luid: now.luid,
-                },
-            );
+            let plan = Plan::build(&policy, &now.environment());
             let report = firewall.apply(&plan).map_err(explain)?;
 
             let state = match now.state {
