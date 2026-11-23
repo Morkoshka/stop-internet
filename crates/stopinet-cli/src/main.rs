@@ -6,8 +6,10 @@
 //!   session; they disappear when the trial ends or the process exits.
 //! - `install`, `uninstall`, `panic` and `status` manage the service, see
 //!   [`manage`].
+//! - `mode` switches the mode of the running service, see [`mode`].
 
 mod manage;
+mod mode;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -19,7 +21,7 @@ use stopinet_core::config::{self, Config};
 use stopinet_core::policy::{Mode, Policy, TunnelState};
 use stopinet_win::{Firewall, Plan, WfpError, observe_tunnel};
 
-const USAGE: &str = "\
+pub(crate) const USAGE: &str = "\
 Usage:
   stopinet policy [--config <file>] [--mode tunnel|proxy|normal] [--tunnel up|down]
       Print the firewall rules for a mode and a tunnel state. Changes nothing.
@@ -34,7 +36,8 @@ Usage:
       to C:\\ProgramData\\stop-internet, register the service and start it.
       Without --config the installed configuration is kept. With
       --session-only the service keeps nothing persistent: stopping it
-      removes every filter. Run again to update or to switch modes.
+      removes every filter. Run again to update, or to switch between
+      session-only and persistent.
 
   stopinet uninstall
       Stop and remove the service, every filter and the programs. The
@@ -45,10 +48,15 @@ Usage:
       ones included. Protection returns when the service starts again.
 
   stopinet status [--config <file>]
-      Show the service, the filters of stop-internet and the tunnel.
+      Show the service, its mode, the filters of stop-internet and the tunnel.
 
-install, uninstall and panic need an elevated terminal.
-Planned: mode.";
+  stopinet mode tunnel|proxy|normal [--minutes <0-1440>]
+      Switch the mode of the running service. normal turns protection off
+      for --minutes, by default the first of normal_mode.durations_min in
+      the configuration; 0 means until reboot, sleep or sign-in. normal
+      needs an elevated terminal.
+
+install, uninstall and panic need an elevated terminal.";
 
 const DEFAULT_TRIAL_SECONDS: u64 = 120;
 const TRIAL_SECONDS: std::ops::RangeInclusive<u64> = 10..=900;
@@ -63,6 +71,7 @@ fn main() -> ExitCode {
         Some("uninstall") => parse(&args[1..]).and_then(|_| manage::uninstall()),
         Some("panic") => parse(&args[1..]).and_then(|_| manage::panic()),
         Some("status") => parse(&args[1..]).and_then(|o| manage::status(&o)),
+        Some("mode") => mode::run(&args[1..]),
         Some("-h" | "--help" | "help") | None => {
             println!("{USAGE}");
             Ok(())

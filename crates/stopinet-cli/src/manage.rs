@@ -6,7 +6,8 @@
 //!   with restart on failure and starts it.
 //! - `uninstall` removes the service, every WFP object and the programs.
 //! - `panic` stops the service and removes every WFP object.
-//! - `status` reads the state; it changes nothing.
+//! - `status` reads the state; it changes nothing. The mode comes from the
+//!   service over its named pipe.
 
 use std::ffi::OsString;
 use std::fs;
@@ -258,6 +259,7 @@ pub fn status(options: &Options) -> Result<(), String> {
             scm_error("cannot open the service manager", &error)
         ),
     }
+    println!("mode:     {}", crate::mode::line());
 
     match inventory() {
         Ok(found) => {
