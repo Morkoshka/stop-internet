@@ -160,7 +160,13 @@ Changes, only while the script runs: a `pktmon` capture, and the audit of
 permitted connections (event 5156, Security log), which tells the script
 which program opened each connection. At the end, also after Ctrl+C, the
 capture stops, the audit setting goes back to what it was, and the capture
-files in `%TEMP%` are deleted. The report
+files in `%TEMP%` are deleted. The audit writes every permitted
+connection, through the tunnel and over loopback too, and on a busy
+computer it can push older entries out of the Security log (it keeps 20 MB
+by default). With `-NoAudit` the audit stays as it is, but the programs in
+the report are only guesses. After the recording the script reads the
+events for a while: it says "Reading connection events...", wait for the
+report. The report
 replaces public addresses with labels PUB-01, PUB-02 and so on, the
 busiest first; the probe addresses are shown as they are. The report is
 safe to share.
