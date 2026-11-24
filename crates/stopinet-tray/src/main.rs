@@ -19,6 +19,8 @@
 //!   by hand, and stays so across restarts. See [`auto`].
 //! - It asks the service for its state once a second. Closing the icon
 //!   does not change the protection.
+//! - `--panic`, for a shortcut in the Start menu, switches protection off
+//!   in an emergency, also without the service. See [`emergency`].
 //!
 //! `stopinet install` starts it at every sign-in. See `docs/design.md`.
 
@@ -26,6 +28,7 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 mod auto;
+mod emergency;
 mod icon;
 mod lang;
 mod place;
@@ -82,6 +85,8 @@ fn main() -> ExitCode {
     match args.as_slice() {
         [] => tray(),
         [flag, minutes] if flag == NORMAL_ARG => normal(minutes),
+        [flag] if flag == emergency::ASK_ARG => emergency::ask(),
+        [flag] if flag == emergency::RUN_ARG => emergency::run(),
         _ => {
             let text = Lang::current().pick(
                 "Неизвестные параметры: {}.\n\nЗначок запускается без параметров.",

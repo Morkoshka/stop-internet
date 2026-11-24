@@ -46,9 +46,10 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     ChangeWindowMessageFilterEx, CreateIconIndirect, CreatePopupMenu, CreateWindowExW,
     DefWindowProcW, DestroyIcon, DestroyMenu, DestroyWindow, DispatchMessageW, GetCursorPos,
-    GetMessageW, HICON, HMENU, ICONINFO, InsertMenuItemW, MB_ICONWARNING, MB_OK, MB_SETFOREGROUND,
-    MENUITEMINFOW, MFS_CHECKED, MFS_DISABLED, MFT_RADIOCHECK, MFT_SEPARATOR, MIIM_FTYPE, MIIM_ID,
-    MIIM_STATE, MIIM_STRING, MIIM_SUBMENU, MSG, MSGFLT_ALLOW, MessageBoxW, PostMessageW,
+    GetMessageW, HICON, HMENU, ICONINFO, IDYES, InsertMenuItemW, MB_DEFBUTTON2, MB_ICONINFORMATION,
+    MB_ICONWARNING, MB_OK, MB_SETFOREGROUND, MB_YESNO, MENUITEMINFOW, MESSAGEBOX_RESULT,
+    MESSAGEBOX_STYLE, MFS_CHECKED, MFS_DISABLED, MFT_RADIOCHECK, MFT_SEPARATOR, MIIM_FTYPE,
+    MIIM_ID, MIIM_STATE, MIIM_STRING, MIIM_SUBMENU, MSG, MSGFLT_ALLOW, MessageBoxW, PostMessageW,
     PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SM_CXSMICON, SW_SHOWNORMAL,
     SetForegroundWindow, TPM_BOTTOMALIGN, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTALIGN,
     TPM_RIGHTBUTTON, TPM_VERTICAL, TPMPARAMS, TrackPopupMenuEx, TranslateMessage, WM_APP,
@@ -717,6 +718,21 @@ pub fn open(path: &Path) -> Result<(), Win32Error> {
 
 /// Shows a warning and waits until it is closed.
 pub fn message_box(text: &str) {
+    show(text, MB_OK | MB_ICONWARNING);
+}
+
+/// Shows a message and waits until it is closed.
+pub fn inform(text: &str) {
+    show(text, MB_OK | MB_ICONINFORMATION);
+}
+
+/// Asks a yes-or-no question, with "No" as the default button. `true` for
+/// "Yes".
+pub fn confirm(text: &str) -> bool {
+    show(text, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES
+}
+
+fn show(text: &str, style: MESSAGEBOX_STYLE) -> MESSAGEBOX_RESULT {
     let text = wide(text);
     let title = wide("stop-internet");
     // SAFETY: both strings are NUL-terminated; no owner window.
@@ -725,9 +741,9 @@ pub fn message_box(text: &str) {
             ptr::null_mut(),
             text.as_ptr(),
             title.as_ptr(),
-            MB_OK | MB_ICONWARNING | MB_SETFOREGROUND,
+            style | MB_SETFOREGROUND,
         )
-    };
+    }
 }
 
 /// The shell wants COM on threads that call `ShellExecuteExW`.
