@@ -24,6 +24,15 @@
     TCP 443 and a DNS query to 1.1.1.1, a ping to 1.1.1.1, a DNS query to
     the router and TCP 443 to 2606:4700:4700::1111. -NoProbe turns this off.
 
+    At the end the script judges what it saw. Once a second it asks the
+    service for the mode and the tunnel, as the tray icon does, and takes
+    the rules of those states from `stopinet policy`, which reads the
+    installed configuration like the service. Each row sent gets a verdict:
+    ok when the rules allow it, LEAK when its program is known and not
+    allowed, ? when the program is unknown or only a guess. The last lines
+    say "No leaks" or name what leaked. There is no verdict while "normal
+    internet" is on, since then everything may go out, nor for -Read.
+
     What changes, only while the script runs: a pktmon capture, and the
     audit of permitted connections (subcategory "Filtering Platform
     Connection", success), which writes every permitted connection to the
@@ -57,7 +66,8 @@
 
 .PARAMETER Read
     Report on a capture.pcapng saved with -Keep instead of recording. The
-    programs are unknown then.
+    programs and the modes of that time are unknown then, so there is no
+    verdict.
 
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\leaks.ps1 -Seconds 60
@@ -599,11 +609,14 @@ function Group-Flows($Flows) {
                 In       = [long]0
                 Programs = New-Object 'System.Collections.Generic.SortedSet[string]' $nameOrder
                 Guesses  = New-Object 'System.Collections.Generic.SortedSet[string]' $nameOrder
+                # For the verdict, which judges each flow on its own.
+                Flows    = New-Object 'System.Collections.Generic.List[object]'
             }
         }
         $group = $groups[$key]
         if ($flow.Direction -eq 'out') { $group.Out += $flow.Packets } else { $group.In += $flow.Packets }
         Add-FlowPrograms @($flow) $group.Programs $group.Guesses
+        $group.Flows.Add($flow)
     }
     $groups.Values
 }
@@ -672,6 +685,132 @@ function Format-Port([string]$Protocol, [int]$Port) {
     if ($Port -lt 10000) { "$Port" } else { 'high' }
 }
 
+# --- verdict -----------------------------------------------------------------
+
+# Must match INSTALL_DIR in crates/stopinet-cli/src/manage.rs.
+$installedCli = 'C:\Program Files\stop-internet\stopinet.exe'
+
+# The mode and the tunnel of the service, "tunnel/up" or "proxy/down" for
+# example, asked over its named pipe as the tray icon does (the protocol is
+# in crates/stopinet-core/src/protocol.rs). "none" when the service does
+# not answer: then the persistent baseline is all there is.
+function Get-ServiceState {
+    $pipe = New-Object System.IO.Pipes.NamedPipeClientStream('.', 'stopinet',
+        [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::Asynchronous)
+    try {
+        $pipe.Connect(500)
+        $request = [Text.Encoding]::ASCII.GetBytes("status`n")
+        $pipe.Write($request, 0, $request.Length)
+        $buffer = New-Object byte[] 1024
+        $read = $pipe.ReadAsync($buffer, 0, $buffer.Length)
+        if (-not $read.Wait(2000)) { return 'none' }
+        $reply = [Text.Encoding]::ASCII.GetString($buffer, 0, $read.Result).Trim()
+    }
+    catch { return 'none' }
+    finally { $pipe.Dispose() }
+    # "ok mode=tunnel tunnel=up left=- durations=15,60,0"
+    $values = @{}
+    foreach ($pair in ($reply -split ' ')) {
+        $key, $value = $pair -split '=', 2
+        $values[$key] = $value
+    }
+    if (-not $values.ContainsKey('ok') -or -not $values['mode'] -or -not $values['tunnel']) {
+        return 'none'
+    }
+    '{0}/{1}' -f $values['mode'], $values['tunnel']
+}
+
+function Format-State([string]$State) {
+    switch -Wildcard ($State) {
+        'tunnel/*' { 'tunnel only, tunnel ' + ($State -split '/')[1] }
+        'proxy/*'  { 'proxy, tunnel ' + ($State -split '/')[1] }
+        'normal/*' { 'normal internet' }
+        'none'     { 'service not answering, the baseline alone' }
+        default    { $State }
+    }
+}
+
+# What the rules of the given states let out through the physical
+# adapters: apps by name, the local network, the DNS queries of Windows,
+# or everything. The rules come from `stopinet policy`, which builds them
+# from the installed configuration as the service does. Session rules for
+# apps are those of the VPN client.
+function Get-Allowed($States) {
+    $allowed = [pscustomobject]@{
+        All        = $false
+        Apps       = New-Object 'System.Collections.Generic.HashSet[string]' $nameOrder
+        ClientApps = New-Object 'System.Collections.Generic.HashSet[string]' $nameOrder
+        Lan        = $false
+        SystemDns  = $false
+    }
+    foreach ($state in $States) {
+        # Without the service only the persistent rules hold; tunnel-only
+        # mode without the tunnel has no others.
+        $mode, $tunnel = if ($state -eq 'none') { 'tunnel', 'down' } else { $state -split '/' }
+        $output = @(& $installedCli policy --mode $mode --tunnel $tunnel 2>&1)
+        if ($LASTEXITCODE -ne 0) { throw "stopinet policy failed: $($output -join ' ')" }
+        $rules = 0
+        foreach ($line in $output) {
+            # "  4  permit  session     app C:\Program Files\...\happd.exe"
+            if ("$line" -notmatch '^\s*\d+\s+(permit|block)\s+(persistent|session)\s+(.+?)\s*$') { continue }
+            $rules++
+            $action, $scope, $what = $Matches[1], $Matches[2], $Matches[3]
+            if ($action -ne 'permit') { continue }
+            if ($what -eq 'all traffic') { $allowed.All = $true }
+            elseif ($what -like 'local network*') { $allowed.Lan = $true }
+            elseif ($what -like 'Windows DNS client*') { $allowed.SystemDns = $true }
+            elseif ($what -like 'app *') {
+                $name = [IO.Path]::GetFileNameWithoutExtension($what.Substring(4))
+                [void]$allowed.Apps.Add($name)
+                if ($scope -eq 'session') { [void]$allowed.ClientApps.Add($name) }
+            }
+        }
+        if ($rules -eq 0) { throw 'stopinet policy printed no rules that this script can read.' }
+    }
+    $allowed
+}
+
+# Packets of Windows itself that the rules always let out, or that never
+# reach them: ARP and other frames that are not IP, DHCP and DHCPv6, IPv6
+# neighbor discovery and multicast listener reports, IGMP.
+function Test-Infrastructure([string]$Protocol, [string]$Port) {
+    if ($Protocol -eq 'ARP' -or $Protocol -like 'EtherType*' -or $Protocol -eq 'IGMP') { return $true }
+    if ($Protocol -eq 'UDP') { return @('67', '547') -contains $Port }
+    if ($Protocol -eq 'ICMPv6') {
+        return @('type 130', 'type 131', 'type 132', 'type 133', 'type 134', 'type 135',
+            'type 136', 'type 137', 'type 143') -contains $Port
+    }
+    $false
+}
+
+# Whether one flow sent through a physical adapter fits the rules: 'ok';
+# 'LEAK' when the program that opened it is known and not allowed; '?' when
+# the program is unknown or only a guess, and not allowed.
+function Get-FlowVerdict($Flow, $Allowed) {
+    $port = Format-Port $Flow.Protocol $Flow.RemotePort
+    if (Test-Infrastructure $Flow.Protocol $port) { return 'ok' }
+    # The rule for the local network leaves out DNS.
+    if ($Allowed.Lan -and $port -ne '53' -and -not (Test-Internet $Flow.Remote)) { return 'ok' }
+    $found = Get-FlowPrograms $Flow
+    $names = @($found.Names | Where-Object { $_ })
+    $dns = $port -eq '53' -and @('UDP', 'TCP') -contains $Flow.Protocol
+    $fitting = @($names | Where-Object {
+            $Allowed.Apps.Contains($_) -or ($Allowed.SystemDns -and $dns -and $_ -eq 'svchost')
+        })
+    if ($names.Count -gt 0 -and $fitting.Count -eq $names.Count) { return 'ok' }
+    if ($found.Exact) { 'LEAK' } else { '?' }
+}
+
+# The worst verdict of the flows that a row of the report sent.
+function Get-GroupVerdict($Group, $Allowed) {
+    $verdicts = @($Group.Flows | Where-Object { $_.Direction -eq 'out' } |
+            ForEach-Object { Get-FlowVerdict $_ $Allowed })
+    if ($verdicts -contains 'LEAK') { 'LEAK' } elseif ($verdicts -contains '?') { '?' } else { 'ok' }
+}
+
+# The states of the service seen while recording, "tunnel/up" and so on.
+$states = New-Object 'System.Collections.Generic.SortedSet[string]'
+
 # --- record ------------------------------------------------------------------
 
 $work = $null
@@ -709,10 +848,12 @@ try {
                 Write-Progress -Activity 'Recording what leaves through the physical adapters' -SecondsRemaining $left
                 $tick = [Diagnostics.Stopwatch]::StartNew()
                 Read-Owners
+                [void]$states.Add((Get-ServiceState))
                 $rest = 1000 - $tick.ElapsedMilliseconds
                 if ($rest -gt 0) { Start-Sleep -Milliseconds $rest }
             }
             Write-Progress -Activity 'Recording what leaves through the physical adapters' -Completed
+            [void]$states.Add((Get-ServiceState))
         }
         finally {
             if ($job) {
@@ -761,8 +902,28 @@ try {
     $groups = @(Group-Flows $capture.Flows)
     $sent = @($groups | Where-Object { $_.Out -gt 0 } | Sort-Object Out -Descending)
     $received = @($groups | Where-Object { $_.Out -eq 0 })
+
+    # The rules to judge by, or why there is no verdict.
+    $allowed = $null
+    $noVerdict = $null
+    if ($Read) {
+        $noVerdict = 'a saved capture: the modes and programs of that time are unknown.'
+    } elseif ($capture.Wire -eq 0) {
+        $noVerdict = 'the capture saw nothing.'
+    } elseif (-not (Test-Path -LiteralPath $installedCli)) {
+        $noVerdict = "stop-internet is not installed, there is no $installedCli."
+    } else {
+        try {
+            $allowed = Get-Allowed $states
+        } catch {
+            $noVerdict = "cannot read the rules: $($_.Exception.Message)"
+        }
+    }
+    $judge = $allowed -and -not $allowed.All
+
     $rows = foreach ($group in $sent) {
         [pscustomobject]@{
+            Verdict  = if ($judge) { Get-GroupVerdict $group $allowed } else { '' }
             Remote   = Get-IpLabel $group.Address
             Protocol = $group.Protocol
             Port     = $group.Port
@@ -770,9 +931,11 @@ try {
             In       = $group.In
             Programs = Format-Programs $group.Programs $group.Guesses
             Internet = Test-Internet $group.Address
+            Group    = $group
         }
     }
     $columns = 'Remote', 'Protocol', 'Port', 'Out', 'In', 'Programs'
+    if ($judge) { $columns = @('Verdict') + $columns }
 
     $adapterNames = ($adapters | ForEach-Object { '{0} ({1})' -f $_.Name, $_.InterfaceDescription }) -join ', '
     ''
@@ -844,6 +1007,69 @@ try {
             Format-Table -AutoSize |
             Out-String -Width 300).Trim()
         ''
+    }
+
+    # --- verdict -------------------------------------------------------------
+
+    if ($noVerdict) {
+        "Verdict: none, $noVerdict"
+    } elseif ($allowed.All) {
+        'Verdict: none. Normal internet was on during the recording, and then anything may go out.'
+        if ($probeAddresses) {
+            $seen = if (@($rows | Where-Object { $_.Group.Address -eq $probeV4 })) { 'yes' } else { 'no' }
+            "The probes to $probeV4 left through the physical adapters: $seen."
+        }
+    } else {
+        $seenStates = @($states | ForEach-Object { Format-State $_ }) -join '; '
+        "Verdict by the rules of the installed configuration for: $seenStates."
+        if ($states.Count -gt 1) {
+            'The capture does not tell when a packet left, so what one of these allows counts for the whole recording.'
+        }
+        ''
+        $leaks = @($rows | Where-Object { $_.Verdict -eq 'LEAK' })
+        $unsure = @($rows | Where-Object { $_.Verdict -eq '?' })
+        $describe = {
+            param($Row)
+            $programs = if ($Row.Programs) { $Row.Programs } else { '(program unknown)' }
+            '  {0} -> {1} {2} {3}' -f $programs, $Row.Remote, $Row.Protocol, $Row.Port
+        }
+        $count = {
+            param([int]$Number)
+            if ($Number -eq 1) { '1 row' } else { "$Number rows" }
+        }
+        if ($leaks -or $foreign) {
+            "LEAK, $(& $count ($leaks.Count + $foreign.Count)) that the rules do not allow:"
+            foreach ($row in $leaks) { & $describe $row }
+            foreach ($row in $foreign) {
+                $programs = if ($row.Programs) { $row.Programs } else { '(program unknown)' }
+                '  {0} -> {1} {2}, from {3}, an address that the physical adapters do not have' -f
+                    $programs, $row.Remote, $row.Protocol, $row.Source
+            }
+            if ($unsure) {
+                "Also to check, $(& $count $unsure.Count) whose program is unknown or only a guess:"
+                foreach ($row in $unsure) { & $describe $row }
+            }
+        } elseif ($unsure) {
+            "No leak found, but to check, $(& $count $unsure.Count) whose program is unknown or only a guess:"
+            foreach ($row in $unsure) { & $describe $row }
+        } else {
+            'No leaks: everything sent through the physical adapters fits the rules.'
+        }
+        if ($unsure -and $NoAudit) {
+            'Without -NoAudit the programs would be exact.'
+        }
+
+        $clientDns = @($rows |
+                Where-Object { $_.Verdict -eq 'ok' -and $_.Port -eq '53' } |
+                ForEach-Object { @($_.Group.Programs) } |
+                Where-Object { $allowed.ClientApps.Contains($_) } |
+                Sort-Object -Unique)
+        if ($clientDns) {
+            ''
+            "Note: $($clientDns -join ', ') sent DNS queries (port 53) directly, past the tunnel."
+            'The rules let the VPN client do that. It is a DNS setting of the client, and the'
+            'provider sees which names are looked up.'
+        }
     }
 
     if ($work -and $Keep) {

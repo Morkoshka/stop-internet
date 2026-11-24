@@ -526,7 +526,8 @@ icon stay the job of `stopinet install` and `stopinet uninstall`.
   ([`docs/testing.md`](testing.md)): capture what leaves through the
   physical adapter with `pktmon`
   ([`tools/leaks.ps1`](../tools/leaks.ps1), which also sends probes like an
-  ordinary program), read WFP audit events (5157,
+  ordinary program and judges what it saw by the rules of the installed
+  configuration), read WFP audit events (5157,
   [`tools/blocked.ps1`](../tools/blocked.ps1)), and go through the
   scenarios: kill the client and its core, disconnect the tunnel, pull the
   cable, sleep and wake, reboot, kill the service, IPv6, DNS, UDP and QUIC,

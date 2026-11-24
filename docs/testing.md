@@ -208,9 +208,24 @@ How to read the report:
   way, through the tunnel for example. A leak is a probe address under
   "Sent to the internet" with program `powershell`. With program `happd`,
   Happ itself sent the probe directly.
+- **Verdict**, the first column, and the last lines: the script judges each
+  row by the rules of stop-internet for the modes it saw while recording.
+  It asks the service for the mode and the tunnel once a second, as the
+  tray icon does, and takes the rules from `stopinet policy`, that is from
+  the installed configuration. `ok`: the rules allow it. `LEAK`: the
+  program that opened it is known and not allowed. `?`: the program is
+  unknown or only a guess; look at such a row with the points above. The
+  last lines say "No leaks" or list what leaked, packets with a foreign
+  source address included, and add a note when the VPN client sends DNS
+  directly. If the mode or the tunnel changed while recording, what any of
+  those states allows counts for the whole recording: the capture does not
+  tell when a packet left. With normal internet on there is no verdict, only
+  whether the probe to 1.1.1.1 left through the physical adapter.
 
 Boot cannot be checked this way: the capture does not survive a reboot.
 B7 checks it.
+
+In F2 to F10 the report must end with "No leaks".
 
 | # | Do | Expect |
 |---|---|---|

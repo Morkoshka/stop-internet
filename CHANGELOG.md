@@ -22,6 +22,9 @@ becomes the text of its
   place as soon as the VPN client gives the adapter an address. The service
   now listens to address changes too, instead of finding a new address on
   its check every 2 seconds.
+- `tools/leaks.ps1` ends its report with a verdict: it reads the mode from
+  the service and the rules from the installed configuration, marks each
+  row ok, LEAK or ?, and says "No leaks" or what leaked.
 
 ## 0.1.0 - 2026-11-24
 
