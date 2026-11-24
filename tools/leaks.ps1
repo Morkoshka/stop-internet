@@ -547,6 +547,88 @@ function Add-OwnAddresses {
     }
 }
 
+# Programs of a flow: those of its connection events, or else the owners
+# of its local port, which are only a guess.
+function Get-FlowPrograms($Flow) {
+    $key = Get-ConnectionKey $Flow.Protocol $Flow.Local ([string]$Flow.LocalPort) $Flow.Remote ([string]$Flow.RemotePort)
+    $exact = $connections[$key]
+    if ($exact) {
+        return [pscustomobject]@{ Exact = $true; Names = @($exact) }
+    }
+    # The set is unrolled into its names on purpose.
+    $guess = if ($Flow.LocalPort -ge 0) { $owners['{0} {1}' -f $Flow.Protocol, $Flow.LocalPort] }
+    [pscustomobject]@{ Exact = $false; Names = @($guess) }
+}
+
+# Adds the programs of the flows to the two sets. The sets are passed as
+# they are: "$set = if (...) { $Exact } else { $Guesses }" would unroll
+# them into their elements.
+function Add-FlowPrograms($Flows, $Exact, $Guesses) {
+    foreach ($flow in $Flows) {
+        $found = Get-FlowPrograms $flow
+        foreach ($name in $found.Names) {
+            if (-not $name) { continue }
+            if ($found.Exact) { [void]$Exact.Add($name) } else { [void]$Guesses.Add($name) }
+        }
+    }
+}
+
+# Names from connection events plainly, guesses in brackets.
+function Format-Programs($Exact, $Guesses) {
+    $names = @($Exact) + @($Guesses | Where-Object { -not $Exact.Contains($_) } | ForEach-Object { "[$_]" })
+    $names -join ', '
+}
+
+# Rows of the report: one per protocol, remote address and port; local
+# ports only lead to the programs.
+function Group-Flows($Flows) {
+    $groups = @{}
+    foreach ($flow in $Flows) {
+        $port = Format-Port $flow.Protocol $flow.RemotePort
+        $key = '{0}|{1}|{2}' -f $flow.Protocol, $flow.Remote, $port
+        if (-not $groups.ContainsKey($key)) {
+            $groups[$key] = [pscustomobject]@{
+                Protocol = $flow.Protocol
+                Address  = $flow.Remote
+                Port     = $port
+                Out      = [long]0
+                In       = [long]0
+                Programs = New-Object 'System.Collections.Generic.SortedSet[string]'
+                Guesses  = New-Object 'System.Collections.Generic.SortedSet[string]'
+            }
+        }
+        $group = $groups[$key]
+        if ($flow.Direction -eq 'out') { $group.Out += $flow.Packets } else { $group.In += $flow.Packets }
+        Add-FlowPrograms @($flow) $group.Programs $group.Guesses
+    }
+    $groups.Values
+}
+
+# A packet of this computer with an address that the physical adapters do
+# not have, the tunnel's for example, went out by a route it should not
+# have taken. One row per source, protocol and remote address.
+function Get-ForeignRows($Flows) {
+    $Flows |
+        Where-Object {
+            $_.Direction -eq 'out' -and $_.Local -and @('0.0.0.0', '::') -notcontains $_.Local -and
+            -not $ownAddresses.Contains($_.Local)
+        } |
+        Group-Object Local, Protocol, Remote |
+        ForEach-Object {
+            $first = $_.Group[0]
+            $exact = New-Object 'System.Collections.Generic.SortedSet[string]'
+            $guesses = New-Object 'System.Collections.Generic.SortedSet[string]'
+            Add-FlowPrograms $_.Group $exact $guesses
+            [pscustomobject]@{
+                Source   = Get-IpLabel $first.Local
+                Remote   = Get-IpLabel $first.Remote
+                Protocol = $first.Protocol
+                Out      = ($_.Group | Measure-Object Packets -Sum).Sum
+                Programs = Format-Programs $exact $guesses
+            }
+        }
+}
+
 # --- addresses ---------------------------------------------------------------
 
 $publicLabels = @{}
@@ -670,51 +752,11 @@ try {
 
     # --- report --------------------------------------------------------------
 
-    # Programs of a flow: those of its connection events, or else the owners
-    # of its local port, which are only a guess.
-    function Get-FlowPrograms($Flow) {
-        $key = Get-ConnectionKey $Flow.Protocol $Flow.Local ([string]$Flow.LocalPort) $Flow.Remote ([string]$Flow.RemotePort)
-        $exact = $connections[$key]
-        if ($exact) {
-            return [pscustomobject]@{ Exact = $true; Names = @($exact) }
-        }
-        $guess = if ($Flow.LocalPort -ge 0) { $owners['{0} {1}' -f $Flow.Protocol, $Flow.LocalPort] }
-        [pscustomobject]@{ Exact = $false; Names = @($guess) }
-    }
-
-    # Names from connection events plainly, guesses in brackets.
-    function Format-Programs($Exact, $Guesses) {
-        $names = @($Exact) + @($Guesses | Where-Object { -not $Exact.Contains($_) } | ForEach-Object { "[$_]" })
-        $names -join ', '
-    }
-
-    # One row per protocol, remote address and port; local ports only lead
-    # to the programs.
-    $groups = @{}
-    foreach ($flow in $capture.Flows) {
-        $port = Format-Port $flow.Protocol $flow.RemotePort
-        $key = '{0}|{1}|{2}' -f $flow.Protocol, $flow.Remote, $port
-        if (-not $groups.ContainsKey($key)) {
-            $groups[$key] = [pscustomobject]@{
-                Protocol = $flow.Protocol
-                Address  = $flow.Remote
-                Port     = $port
-                Out      = [long]0
-                In       = [long]0
-                Programs = New-Object 'System.Collections.Generic.SortedSet[string]'
-                Guesses  = New-Object 'System.Collections.Generic.SortedSet[string]'
-            }
-        }
-        $group = $groups[$key]
-        if ($flow.Direction -eq 'out') { $group.Out += $flow.Packets } else { $group.In += $flow.Packets }
-        $found = Get-FlowPrograms $flow
-        $set = if ($found.Exact) { $group.Programs } else { $group.Guesses }
-        foreach ($name in $found.Names) { if ($name) { [void]$set.Add($name) } }
-    }
     # Labels go to the busiest addresses first, so PUB-01 is usually the
     # VPN server.
-    $sent = @($groups.Values | Where-Object { $_.Out -gt 0 } | Sort-Object Out -Descending)
-    $received = @($groups.Values | Where-Object { $_.Out -eq 0 })
+    $groups = @(Group-Flows $capture.Flows)
+    $sent = @($groups | Where-Object { $_.Out -gt 0 } | Sort-Object Out -Descending)
+    $received = @($groups | Where-Object { $_.Out -eq 0 })
     $rows = foreach ($group in $sent) {
         [pscustomobject]@{
             Remote   = Get-IpLabel $group.Address
@@ -749,38 +791,12 @@ try {
         'The capture does not see them, so this report proves nothing.'
     }
 
-    # A packet of this computer with an address that the physical adapters
-    # do not have, the tunnel's for example, went out by a route it should
-    # not have taken.
-    $foreign = @($capture.Flows | Where-Object {
-            $_.Direction -eq 'out' -and $_.Local -and @('0.0.0.0', '::') -notcontains $_.Local -and
-            -not $ownAddresses.Contains($_.Local)
-        })
+    $foreign = @(Get-ForeignRows $capture.Flows)
     if ($foreign) {
         ''
         'WARNING: sent with a source address that the physical adapters do not have:'
         ''
-        ($foreign |
-            Group-Object Local, Protocol, Remote |
-            ForEach-Object {
-                $first = $_.Group[0]
-                $exact = New-Object 'System.Collections.Generic.SortedSet[string]'
-                $guesses = New-Object 'System.Collections.Generic.SortedSet[string]'
-                foreach ($flow in $_.Group) {
-                    $found = Get-FlowPrograms $flow
-                    $set = if ($found.Exact) { $exact } else { $guesses }
-                    foreach ($name in $found.Names) { if ($name) { [void]$set.Add($name) } }
-                }
-                [pscustomobject]@{
-                    Source   = Get-IpLabel $first.Local
-                    Remote   = Get-IpLabel $first.Remote
-                    Protocol = $first.Protocol
-                    Out      = ($_.Group | Measure-Object Packets -Sum).Sum
-                    Programs = Format-Programs $exact $guesses
-                }
-            } |
-            Format-Table -AutoSize -Wrap |
-            Out-String -Width 300).Trim()
+        ($foreign | Format-Table -AutoSize -Wrap | Out-String -Width 300).Trim()
     }
 
     ''
