@@ -21,6 +21,8 @@ pages=(
     "design.ru.md:Архитектура"
     "testing.md:Manual-tests"
     "testing.ru.md:Ручные-тесты"
+    "recovery.md:Recovery"
+    "recovery.ru.md:Восстановление"
 )
 
 # Prints a document as a wiki page: without its title (the wiki shows the

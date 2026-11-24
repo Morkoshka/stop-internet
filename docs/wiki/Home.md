@@ -12,6 +12,7 @@ VPN-клиент или сам stop-internet, трафик остаётся за
 |---|---|
 | [Design](Design): threat model, modes, rules, WFP filters, lifecycle | [Архитектура](Архитектура): модель угроз, режимы, правила, фильтры WFP, жизненный цикл |
 | [Manual tests](Manual-tests): testing the service on a real machine | [Ручные тесты](Ручные-тесты): проверка службы на реальной машине |
+| [Recovery](Recovery): what to do when the internet does not work | [Восстановление](Восстановление): что делать, если не работает интернет |
 
 Code, build instructions and the roadmap are in the
 [repository](https://github.com/Morkoshka/stop-internet):
