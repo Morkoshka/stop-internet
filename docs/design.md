@@ -451,7 +451,6 @@ Limits:
 4. Windows service: persistent and boot-time filters, crash and power
    handling; `install`, `uninstall`, `panic`, `status`. **Done.**
 5. Tray icon, named pipe, mode switching, UAC, timed normal mode and the
-   automatic choice by the system proxy. **Written**; part C of the manual
-   tests passed, part D (the automatic choice) is pending.
+   automatic choice by the system proxy. **Done.**
 6. Installer package and a recovery guide.
 7. Full test checklist, release builds.
