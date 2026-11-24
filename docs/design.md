@@ -546,4 +546,4 @@ icon stay the job of `stopinet install` and `stopinet uninstall`.
 5. Tray icon, named pipe, mode switching, UAC, timed normal mode and the
    automatic choice by the system proxy. **Done.**
 6. Installer package and a recovery guide. **Done.**
-7. Full test checklist, release builds.
+7. Full test checklist, release builds. **Done.**

@@ -10,6 +10,7 @@ Nothing reaches the internet past the tunnel: not before the VPN connects,
 not while it reconnects, not after it crashes.
 
 [![CI](https://github.com/Morkoshka/stop-internet/actions/workflows/ci.yml/badge.svg)](https://github.com/Morkoshka/stop-internet/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Morkoshka/stop-internet)](https://github.com/Morkoshka/stop-internet/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![Rust](https://img.shields.io/badge/Rust-2024-B7410E?logo=rust)
@@ -19,10 +20,11 @@ English · [Русский](README.ru.md)
 
 </div>
 
-> [!WARNING]
-> Early development. Every part, the installer included, has passed the
-> manual tests on a real machine, but there are no release builds yet: you
-> build the programs and the installer from source.
+> [!NOTE]
+> Version 0.1.0. Every part has passed the manual tests on a real machine,
+> with Happ 4.3 on Windows 11, leak tests with traffic captures included.
+> The installer is not signed; [Getting started](#getting-started) shows
+> how to check it.
 
 ## Why
 
@@ -110,6 +112,29 @@ The [design document](docs/design.md) has the threat model, the rule table,
 the WFP mapping and the reasons behind each decision.
 
 ## Getting started
+
+### Install a release
+
+1. From the [latest release](https://github.com/Morkoshka/stop-internet/releases/latest)
+   download `stop-internet-<version>-setup.exe` and `SHA256SUMS.txt`.
+2. Check the download: the hash must be the one in `SHA256SUMS.txt`. With
+   the [GitHub CLI](https://cli.github.com), the attestation also shows that
+   the Release workflow of this repository built the file from its tag:
+
+   ```powershell
+   (Get-FileHash .\stop-internet-<version>-setup.exe).Hash
+   gh attestation verify .\stop-internet-<version>-setup.exe --repo Morkoshka/stop-internet
+   ```
+
+3. Run it. As it is not signed, SmartScreen may say "Windows protected your
+   PC" (More info, Run anyway), and UAC shows "Unknown publisher". Without
+   a configuration of its own it installs the example for Happ. For another
+   VPN client, fill in a copy of
+   [`config/stopinet.example.toml`](config/stopinet.example.toml) first and
+   pass it with `/CONFIG="<full path>"`. What the installer does is
+   described under step 4 below.
+
+### Build from source
 
 **Requirements:** Windows 10 or 11 on x64, [Rust](https://rustup.rs) with
 the MSVC toolchain, [Inno Setup](https://jrsoftware.org/isinfo.php) 6.4 or
@@ -238,7 +263,7 @@ mode back to the one that fits the system proxy.
 - [x] Windows service: persistent and boot-time filters
 - [x] Tray icon, mode switching, UAC, timed normal mode, automatic choice by the system proxy
 - [x] Installer package and recovery guide
-- [ ] Full test checklist and releases
+- [x] Full test checklist and releases
 
 ## License
 

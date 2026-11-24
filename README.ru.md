@@ -10,6 +10,7 @@
 время переподключения, ни после его падения.
 
 [![CI](https://github.com/Morkoshka/stop-internet/actions/workflows/ci.yml/badge.svg)](https://github.com/Morkoshka/stop-internet/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Morkoshka/stop-internet)](https://github.com/Morkoshka/stop-internet/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![Rust](https://img.shields.io/badge/Rust-2024-B7410E?logo=rust)
@@ -19,10 +20,11 @@
 
 </div>
 
-> [!WARNING]
-> Ранняя разработка. Все части, включая установщик, прошли ручную проверку
-> на реальной машине, но готовых сборок пока нет: программы и установщик
-> собираются из исходников.
+> [!NOTE]
+> Версия 0.1.0. Все части прошли ручную проверку на реальной машине, с Happ
+> 4.3 на Windows 11, включая проверку утечек с записью трафика. Установщик
+> не подписан; как его проверить, сказано в разделе
+> [«Как начать»](#как-начать).
 
 ## Зачем
 
@@ -108,6 +110,31 @@ TUN-адаптер поднят, она добавляет сеансовые ф
 устройство фильтров WFP и причины каждого решения.
 
 ## Как начать
+
+### Установить готовую сборку
+
+1. Со страницы
+   [последнего релиза](https://github.com/Morkoshka/stop-internet/releases/latest)
+   скачайте `stop-internet-<версия>-setup.exe` и `SHA256SUMS.txt`.
+2. Проверьте файл: хэш должен совпадать с записанным в `SHA256SUMS.txt`.
+   С [GitHub CLI](https://cli.github.com) attestation ещё и показывает, что
+   файл собран workflow Release этого репозитория из его тега:
+
+   ```powershell
+   (Get-FileHash .\stop-internet-<версия>-setup.exe).Hash
+   gh attestation verify .\stop-internet-<версия>-setup.exe --repo Morkoshka/stop-internet
+   ```
+
+3. Запустите его. Он не подписан, поэтому SmartScreen может написать
+   «Система Windows защитила ваш компьютер» («Подробнее», «Выполнить в
+   любом случае»), а UAC — «Неизвестный издатель». Без своей конфигурации
+   установщик ставит пример для Happ. Для другого VPN-клиента сначала
+   заполните копию
+   [`config/stopinet.example.toml`](config/stopinet.example.toml) и
+   передайте её через `/CONFIG="<полный путь>"`. Что делает установщик,
+   описано ниже, в шаге 4.
+
+### Собрать из исходников
 
 **Нужно:** Windows 10 или 11 на x64, [Rust](https://rustup.rs) с набором
 MSVC, [Inno Setup](https://jrsoftware.org/isinfo.php) 6.4 или новее для
@@ -235,7 +262,7 @@ stopinet uninstall                   # без установщика; конфи
 - [x] Служба Windows: постоянные и boot-time фильтры
 - [x] Значок в трее, переключение режимов, UAC, «обычный интернет» на время, автоматический выбор по системному прокси
 - [x] Установочный пакет и инструкция по восстановлению
-- [ ] Полный чек-лист тестов и релизы
+- [x] Полный чек-лист тестов и релизы
 
 ## Лицензия
 
