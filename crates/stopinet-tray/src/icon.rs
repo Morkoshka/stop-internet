@@ -6,6 +6,10 @@
 //! for example next to the round voice indicator of a chat program:
 //! a check mark when protected and working, a cross when blocked, a dash
 //! when protection is off.
+//!
+//! The pictures in `docs/images` are SVG versions of the same icons. A test
+//! builds them from the constants here and fails when they differ; running
+//! the tests with `STOPINET_UPDATE_PICTURES=1` writes them anew.
 
 use std::f32::consts::FRAC_PI_2;
 
@@ -224,6 +228,106 @@ mod tests {
             assert_ne!(white(&icons[0]), white(&icons[1]));
             assert_ne!(white(&icons[1]), white(&icons[2]));
             assert_ne!(white(&icons[0]), white(&icons[2]));
+        }
+    }
+
+    /// The icon as SVG, for the pictures in `docs/images`: the same shape,
+    /// colors and signs, at 100 units per side. The curve from the waist to
+    /// the tip is a cubic Bézier with the tangents of the cosine.
+    fn svg(color: Color) -> String {
+        let n = |value: f32| {
+            let text = format!("{:.2}", value * 100.0);
+            text.trim_end_matches('0').trim_end_matches('.').to_owned()
+        };
+        let hex = |rgb: [f32; 3]| {
+            let [r, g, b] = rgb.map(|c| c.round() as u8);
+            format!("#{r:02x}{g:02x}{b:02x}")
+        };
+        let half = (RIGHT - LEFT) / 2.0;
+        let (rise, reach) = ((TIP - WAIST) / 3.0, half * FRAC_PI_2 / 3.0);
+        let shield = format!(
+            "M{} {}H{}A{r} {r} 0 0 1 {} {}V{}C{} {} {} {} 50 {}C{} {} {} {} {} {}V{}A{r} {r} 0 0 1 {} {}Z",
+            n(LEFT + CORNER),
+            n(TOP),
+            n(RIGHT - CORNER),
+            n(RIGHT),
+            n(TOP + CORNER),
+            n(WAIST),
+            n(RIGHT),
+            n(WAIST + rise),
+            n(0.5 + reach),
+            n(TIP - rise),
+            n(TIP),
+            n(0.5 - reach),
+            n(TIP - rise),
+            n(LEFT),
+            n(WAIST + rise),
+            n(LEFT),
+            n(WAIST),
+            n(TOP + CORNER),
+            n(LEFT + CORNER),
+            n(TOP),
+            r = n(CORNER),
+        );
+        let sign: String = color
+            .sign()
+            .iter()
+            .map(|(a, b)| format!("M{} {}L{} {}", n(a.0), n(a.1), n(b.0), n(b.1)))
+            .collect();
+        let fill = color.rgb().map(f32::from);
+        let title = match color {
+            Color::Green => "Protected",
+            Color::Red => "Blocked",
+            Color::Grey => "Protection off",
+        };
+        format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\" width=\"100\" height=\"100\">\n\
+             <title>{title}</title>\n\
+             <clipPath id=\"shield\"><path d=\"{shield}\"/></clipPath>\n\
+             <path d=\"{shield}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\" clip-path=\"url(#shield)\"/>\n\
+             <path d=\"{sign}\" fill=\"none\" stroke=\"#fff\" stroke-width=\"{}\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n\
+             </svg>\n",
+            hex(fill),
+            hex(fill.map(|c| c * 0.65)),
+            // The rim lies inside the outline; the clip cuts the outer half.
+            n(2.0 / 16.0),
+            n(2.0 * STROKE),
+        )
+    }
+
+    #[test]
+    fn the_pictures_in_the_docs_match_the_icons() {
+        let pictures = [
+            (
+                Color::Green,
+                "shield-green.svg",
+                include_str!("../../../docs/images/shield-green.svg"),
+            ),
+            (
+                Color::Red,
+                "shield-red.svg",
+                include_str!("../../../docs/images/shield-red.svg"),
+            ),
+            (
+                Color::Grey,
+                "shield-grey.svg",
+                include_str!("../../../docs/images/shield-grey.svg"),
+            ),
+        ];
+        let update = std::env::var_os("STOPINET_UPDATE_PICTURES").is_some();
+        for (color, name, picture) in pictures {
+            let expected = svg(color);
+            if update {
+                let path = format!("{}/../../docs/images/{name}", env!("CARGO_MANIFEST_DIR"));
+                std::fs::write(path, &expected).unwrap();
+                continue;
+            }
+            // Git may check the file out with CRLF line ends.
+            assert_eq!(
+                picture.replace("\r\n", "\n"),
+                expected,
+                "docs/images/{name} is out of date: run the tests with STOPINET_UPDATE_PICTURES=1"
+            );
         }
     }
 

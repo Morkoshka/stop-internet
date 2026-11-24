@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+<title>Protection off</title>
+<clipPath id="shield"><path d="M25 7H75A12 12 0 0 1 87 19V50C87 65.33 69.37 80.67 50 96C30.63 80.67 13 65.33 13 50V19A12 12 0 0 1 25 7Z"/></clipPath>
+<path d="M25 7H75A12 12 0 0 1 87 19V50C87 65.33 69.37 80.67 50 96C30.63 80.67 13 65.33 13 50V19A12 12 0 0 1 25 7Z" fill="#8c959f" stroke="#5b6167" stroke-width="12.5" clip-path="url(#shield)"/>
+<path d="M33 44L67 44" fill="none" stroke="#fff" stroke-width="13.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

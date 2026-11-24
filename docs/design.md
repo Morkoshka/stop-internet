@@ -344,7 +344,9 @@ administrator rights:
   first, because a running program cannot be replaced or deleted.
 - One icon per session (a mutex in the `Local\` namespace). The icon comes
   back when Explorer restarts (`TaskbarCreated`). The icons are drawn in
-  code, so the repository holds no images.
+  code. `docs/images` has SVG copies for the documentation, and a unit
+  test checks that they match the shape, the colors and the signs of the
+  code.
 
 ## Excluded apps when the tunnel drops
 
