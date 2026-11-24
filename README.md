@@ -1,55 +1,91 @@
+<div align="center">
+
+<img src="docs/images/shield-green.svg" width="96" height="96" alt="">
+
 # stop-internet
 
-English | [Русский](README.ru.md)
+**Fail-closed kill switch for TUN-based VPN clients on Windows**
 
-Fail-closed kill switch for TUN-based VPN clients on Windows, built on the
-Windows Filtering Platform (WFP).
+Nothing reaches the internet past the tunnel: not before the VPN connects,
+not while it reconnects, not after it crashes.
 
-> **Status:** early development. The firewall engine and the Windows service
-> work and passed the manual tests; the tray icon and mode switching are
-> written and being tested by hand. Not ready for daily use.
+[![CI](https://github.com/Morkoshka/stop-internet/actions/workflows/ci.yml/badge.svg)](https://github.com/Morkoshka/stop-internet/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+![Rust](https://img.shields.io/badge/Rust-2024-B7410E?logo=rust)
+[![Wiki](https://img.shields.io/badge/docs-wiki-6E7781)](https://github.com/Morkoshka/stop-internet/wiki)
+
+English · [Русский](README.ru.md)
+
+</div>
+
+> [!WARNING]
+> Early development. Every part works and has passed the manual tests on a
+> real machine, but there is no installer or release build yet: you build
+> it from source.
 
 ## Why
 
 A TUN-based VPN client routes traffic into its virtual adapter, but nothing
-stops applications from using the physical adapter when the tunnel is not
-there. Diagnostics with [Happ](https://www.happ.su) 4.3 on Windows showed two
-real leaks:
+stops applications from using the physical adapter while the tunnel is not
+there. Diagnostics with [Happ](https://www.happ.su) 4.3 on Windows showed
+two real leaks:
 
 - connections opened during a reconnect stayed on the physical adapter after
   the tunnel came back;
-- a Windows system service kept a connection from boot outside the tunnel for
-  the whole session.
+- a Windows system service kept a connection from boot outside the tunnel
+  for the whole session.
 
-Built-in protections of VPN cores are removed when the core exits, which is
+Built-in protections of VPN cores go away when the core exits, which is
 exactly when they are needed.
 
-## What it does
+## Features
 
-- While protection is on, applications reach the internet only through the
-  tunnel. When the tunnel goes down, traffic is blocked at once.
-- The routing of the VPN client keeps working: rule sets, direct rules and
-  per-app exclusions are untouched.
-- Apps excluded from the tunnel keep working when it drops, for example a
-  game.
-- Fail-closed: if the VPN client, its core or stop-internet crashes, or the
-  machine reboots, the block stays.
-- DNS to the router, IPv6 and Teredo outside the tunnel are blocked. Proxy
-  mode without the tunnel lets system DNS out, so that the proxy can find
-  its server.
-- A tray icon shows the state and switches modes; turning protection off
-  needs a UAC prompt and is time-limited.
-- The tray picks the protected mode by itself: proxy mode while the system
-  proxy of Windows points to this computer (the VPN client in system proxy
-  mode), tunnel only otherwise. Choosing a mode by hand turns this off.
+- **Tunnel or nothing.** While protection is on, applications reach the
+  internet only through the tunnel. When it goes down, traffic is blocked at
+  once.
+- **Fail-closed.** If the VPN client, its core or stop-internet crashes, or
+  the machine reboots, the block stays: the baseline lives in the Windows
+  Filtering Platform itself.
+- **The VPN client stays in charge.** Rule sets, direct rules and per-app
+  exclusions keep working. Apps excluded from the tunnel, a game for
+  example, keep working when it drops.
+- **No leaks on the side.** DNS to the router, IPv6 and Teredo outside the
+  tunnel are blocked.
+- **Tray icon.** Shows the state at a glance and switches modes. It follows
+  the VPN client by itself: proxy mode while the client runs as the system
+  proxy, tunnel-only mode otherwise.
+- **Off only on purpose.** Turning protection off needs a UAC prompt, lasts
+  15 minutes, an hour or until the next reboot, sleep or sign-in, and then
+  ends by itself.
 
 ## Modes
 
-| Mode | Internet for applications | Icon |
-|---|---|---|
-| Tunnel only (default after every boot, wake-up and sign-in) | only through the tunnel | green / red |
-| Proxy | through the tunnel or the VPN client's system proxy | green |
-| Normal internet (15 min, 1 h or until reboot, sleep or sign-in) | unrestricted | grey |
+| Icon | Mode | Internet for applications |
+|:-:|---|---|
+| <img src="docs/images/shield-green.svg" width="24" height="24" alt="green"> <img src="docs/images/shield-red.svg" width="24" height="24" alt="red"> | **Tunnel only**: the default after every boot, wake-up and sign-in | only through the tunnel; blocked while it is down |
+| <img src="docs/images/shield-green.svg" width="24" height="24" alt="green"> | **Proxy**: for the VPN client in system proxy mode, without TUN | through the tunnel or the client's local proxy |
+| <img src="docs/images/shield-grey.svg" width="24" height="24" alt="grey"> | **Normal internet**: 15 min, 1 h or until reboot, sleep or sign-in | unrestricted |
+
+The icon is green while the internet works through the VPN, red while it is
+blocked (no tunnel, or the service is not running) and grey while
+protection is off. The signs differ too, so the states can be told apart
+without colors.
+
+The menu is in Russian:
+
+```text
+Только туннель                 tunnel only,
+интернет через VPN             the internet goes through the VPN
+──────────────────────
+✓ Автоматически                pick the mode by the system proxy
+● Только туннель               tunnel only
+  Прокси                       proxy
+  Обычный интернет  ›          normal internet: 15 min, 1 h, until reboot
+──────────────────────
+  Журнал службы                service log
+  Закрыть значок               close the icon
+```
 
 ## How it works
 
@@ -61,69 +97,103 @@ flowchart LR
     Win["Windows"] -- "adapter, power and logon events" --> Svc
 ```
 
-The service keeps a persistent baseline of WFP filters that blocks everything
-except loopback, DHCP, IPv6 neighbor discovery and excluded apps. When the
-tunnel adapter is up, it adds session filters for the tunnel adapter and for
-the VPN daemon that carries the tunnel. The baseline survives reboots and
-crashes; session filters vanish with the service.
+The service keeps a persistent baseline of WFP filters that blocks
+everything except loopback, DHCP, IPv6 neighbor discovery and excluded apps.
+While the tunnel adapter is up, it adds session filters for the tunnel and
+for the VPN daemon that carries it. The baseline survives reboots and
+crashes; the session filters vanish with the service. A sublayer of its own
+with the highest weight means no allow rule of Windows Firewall or other
+software can open a hole.
 
-See [docs/design.md](docs/design.md) for the threat model, the rule table and
-the WFP mapping. The same documents, in English and Russian, are in the
-[wiki](https://github.com/Morkoshka/stop-internet/wiki).
+The [design document](docs/design.md) has the threat model, the rule table,
+the WFP mapping and the reasons behind each decision.
 
-## Building
+## Getting started
 
-Requirements: Windows 10 or 11, Rust (MSVC toolchain).
+**Requirements:** Windows 10 or 11, [Rust](https://rustup.rs) with the MSVC
+toolchain, an elevated PowerShell for everything that installs.
+
+1. Build and run the tests:
+
+   ```powershell
+   cargo build --release
+   cargo test
+   ```
+
+2. Copy [`config/stopinet.example.toml`](config/stopinet.example.toml) to
+   `config/stopinet.local.toml` (ignored by git) and fill in your VPN
+   client: the tunnel adapter, its processes and the apps it excludes. The
+   example is set up for Happ. See the rules it gives without touching the
+   system:
+
+   ```powershell
+   .\target\release\stopinet.exe policy --config config\stopinet.local.toml --mode tunnel --tunnel down
+   ```
+
+3. Try the rules for two minutes; they roll back by themselves:
+
+   ```powershell
+   .\target\release\stopinet.exe trial --config config\stopinet.local.toml
+   ```
+
+4. Install. `--session-only` keeps nothing persistent, so a reboot or a
+   stop of the service leaves the machine as it was. Run `install` again
+   without it for the persistent baseline:
+
+   ```powershell
+   .\target\release\stopinet.exe install --config config\stopinet.local.toml --session-only
+   ```
+
+   The programs go to `C:\Program Files\stop-internet`, the configuration
+   to `C:\ProgramData\stop-internet`, and the tray icon starts at every
+   sign-in.
+
+> [!CAUTION]
+> Keep the way out at hand. `stopinet panic` stops the service and removes
+> every filter, the persistent ones included; it needs no network.
+> Protection returns when the service starts again. Go through the
+> [manual tests](docs/testing.md) before relying on it.
+
+### Everyday use
+
+The tray icon is all you need. From a terminal (`stopinet` is
+`C:\Program Files\stop-internet\stopinet.exe`, which is not on `PATH`):
 
 ```powershell
-cargo build --release
-cargo test
+stopinet status                      # service, mode, filters, tunnel
+stopinet mode proxy                  # or tunnel
+stopinet mode normal --minutes 15    # elevated terminal only
+stopinet uninstall                   # configuration and log stay
 ```
 
-Dry run of the policy, without touching the system:
+While "Автоматически" is on in the tray menu, the tray sets the protected
+mode back to the one that fits the system proxy.
 
-```powershell
-cargo run -p stopinet-cli -- policy --config config/stopinet.example.toml --mode tunnel --tunnel down
-```
+## Documentation
 
-Service, from an elevated terminal (see [docs/testing.md](docs/testing.md)
-before the first run):
+- **[Design](docs/design.md)**: threat model, modes, rules, WFP filters,
+  lifecycle and the reasons behind the decisions.
+- **[Manual tests](docs/testing.md)**: what to check on a real machine,
+  step by step.
+- **[Wiki](https://github.com/Morkoshka/stop-internet/wiki)**: the same
+  documents, in English and Russian.
 
-```powershell
-.\target\release\stopinet.exe install --config <your config> --session-only
-.\target\release\stopinet.exe status
-.\target\release\stopinet.exe panic
-.\target\release\stopinet.exe uninstall
-```
-
-`--session-only` keeps nothing persistent and is meant for testing; without
-it the baseline survives reboots and service crashes. `panic` removes every
-filter in an emergency. `install` also sets the tray icon to start at every
-sign-in.
-
-Modes, from the tray menu or from a terminal; `normal` needs an elevated
-one. While "Автоматически" is on in the tray menu, the tray sets the
-protected mode back to the one that fits the system proxy:
-
-```powershell
-stopinet mode proxy
-stopinet mode normal --minutes 15
-stopinet mode tunnel
-```
-
-## Repository layout
+<details>
+<summary><b>Repository layout</b></summary>
 
 | Path | Content |
 |---|---|
-| `crates/stopinet-core` | configuration, policy model, modes, pipe protocol |
+| `crates/stopinet-core` | configuration, policy model, modes, pipe protocol; no unsafe code |
 | `crates/stopinet-win` | WFP engine, persistent baseline, tunnel adapter lookup, named pipe |
 | `crates/stopinet-service` | Windows service |
 | `crates/stopinet-tray` | tray icon |
 | `crates/stopinet-cli` | `stopinet` command-line tool |
 | `config/` | example configuration |
-| `docs/` | design, manual tests |
+| `docs/` | design, manual tests, pictures |
 | `tools/diag.ps1` | read-only, anonymized network diagnostics |
 | `tools/blocked.ps1` | anonymized report of blocked connections (turns on auditing while it runs) |
+
+</details>
 
 ## Roadmap
 
@@ -131,9 +201,9 @@ stopinet mode tunnel
 - [x] WFP engine and CLI with automatic rollback
 - [x] Tunnel monitor
 - [x] Windows service: persistent and boot-time filters
-- [ ] Tray icon, mode switching, UAC, timed normal mode (implemented, testing)
+- [x] Tray icon, mode switching, UAC, timed normal mode, automatic choice by the system proxy
 - [ ] Installer package and recovery guide
-- [ ] Test checklist and releases
+- [ ] Full test checklist and releases
 
 ## License
 
