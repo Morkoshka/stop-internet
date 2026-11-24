@@ -42,7 +42,8 @@ Usage:
 
   stopinet uninstall
       Stop and remove the service, every filter, the tray icon and the
-      programs. The configuration and the log stay.
+      programs. The configuration and the log stay, and so do the programs
+      if a filter cannot be removed.
 
   stopinet panic
       Emergency: stop the service and remove every filter, the persistent

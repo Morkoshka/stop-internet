@@ -6,7 +6,8 @@
 //!   with restart on failure and starts it. The tray icon starts at every
 //!   sign-in of every user, and right away in this session.
 //! - `uninstall` removes the service, every WFP object, the autostart of the
-//!   tray icon and the programs.
+//!   tray icon and the programs. If a WFP object is left, the programs stay,
+//!   so that it can be run again.
 //! - `panic` stops the service and removes every WFP object.
 //! - `status` reads the state; it changes nothing. The mode comes from the
 //!   service over its named pipe.
@@ -211,6 +212,15 @@ pub fn uninstall() -> Result<(), String> {
 
     let report = remove_all().map_err(explain)?;
     print_removal(&report);
+    if !report.is_complete() {
+        // The filters left may block the network, so keep the tool that
+        // removes them.
+        return Err(format!(
+            "{}\nThe programs stay in {INSTALL_DIR}: run `stopinet uninstall` again from an \
+             elevated terminal.",
+            failures("some objects are left", &report)
+        ));
+    }
 
     let current = std::env::current_exe()
         .ok()
@@ -229,12 +239,7 @@ pub fn uninstall() -> Result<(), String> {
     }
     let _ = fs::remove_dir(INSTALL_DIR);
     println!("configuration and log kept in {DATA_DIR}");
-
-    if report.is_complete() {
-        Ok(())
-    } else {
-        Err(failures("some objects are left", &report))
-    }
+    Ok(())
 }
 
 pub fn panic() -> Result<(), String> {
