@@ -678,6 +678,8 @@ fn layer_key(layer: Layer) -> GUID {
         Layer::RecvAcceptV6 => fwp::FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
         Layer::ForwardV4 => fwp::FWPM_LAYER_IPFORWARD_V4,
         Layer::ForwardV6 => fwp::FWPM_LAYER_IPFORWARD_V6,
+        Layer::OutboundPacketV4 => fwp::FWPM_LAYER_OUTBOUND_IPPACKET_V4,
+        Layer::OutboundPacketV6 => fwp::FWPM_LAYER_OUTBOUND_IPPACKET_V6,
     }
 }
 
@@ -690,6 +692,7 @@ fn field_key(field: Field) -> GUID {
         Field::LocalPort => fwp::FWPM_CONDITION_IP_LOCAL_PORT,
         Field::RemotePort => fwp::FWPM_CONDITION_IP_REMOTE_PORT,
         Field::RemoteAddress => fwp::FWPM_CONDITION_IP_REMOTE_ADDRESS,
+        Field::LocalAddress => fwp::FWPM_CONDITION_IP_LOCAL_ADDRESS,
     }
 }
 
@@ -698,6 +701,7 @@ fn match_type(kind: MatchKind) -> fwp::FWP_MATCH_TYPE {
         MatchKind::Equal => fwp::FWP_MATCH_EQUAL,
         MatchKind::NotEqual => fwp::FWP_MATCH_NOT_EQUAL,
         MatchKind::FlagsAllSet => fwp::FWP_MATCH_FLAGS_ALL_SET,
+        MatchKind::FlagsNoneSet => fwp::FWP_MATCH_FLAGS_NONE_SET,
         MatchKind::Range => fwp::FWP_MATCH_RANGE,
     }
 }

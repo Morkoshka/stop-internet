@@ -11,6 +11,7 @@
 mod manage;
 mod mode;
 
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
@@ -180,16 +181,17 @@ fn trial(args: &[String]) -> Result<(), String> {
 
     let started = Instant::now();
     let deadline = started + Duration::from_secs(options.seconds);
-    // Filters are rebuilt only when the tunnel state or adapter changes;
+    // Filters are rebuilt only when the tunnel state, adapter or addresses change;
     // a changed note alone is just printed.
-    let mut applied: Option<(TunnelState, Option<u64>)> = None;
+    let mut applied: Option<(TunnelState, Option<u64>, Vec<IpAddr>)> = None;
     let mut last_note: Option<String> = None;
 
     while Instant::now() < deadline {
         let now = observe_tunnel(&config.tunnel);
         let elapsed = started.elapsed().as_secs();
 
-        let changed = applied != Some((now.state, now.luid));
+        let key = (now.state, now.luid, now.addresses.clone());
+        let changed = applied.as_ref() != Some(&key);
         if changed {
             let policy = Policy::build(&config, options.mode, now.state);
             let plan = Plan::build(&policy, &now.environment());
@@ -206,7 +208,7 @@ fn trial(args: &[String]) -> Result<(), String> {
             for line in &report.warnings {
                 println!("         note: {line}");
             }
-            applied = Some((now.state, now.luid));
+            applied = Some(key);
         }
 
         if now.note != last_note {

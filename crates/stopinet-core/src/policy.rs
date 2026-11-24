@@ -144,6 +144,14 @@ pub enum Matcher {
     NeighborDiscovery,
     /// Any traffic on the tunnel adapter with this interface alias.
     TunnelInterface(String),
+    /// Outbound packets with an address of the tunnel adapter with this
+    /// interface alias that leave through another interface, loopback
+    /// excluded. Windows checks a connection once, when it opens: one opened
+    /// through the tunnel keeps its address and goes on sending when the
+    /// routes of the tunnel go away, after a wake-up for example, and its
+    /// packets then take the physical adapter. This matcher looks at every
+    /// packet.
+    TunnelAddressElsewhere(String),
     /// Any traffic of the process with this image path, on any interface.
     App(PathBuf),
     /// Private, link-local and multicast ranges, except DNS.
@@ -202,6 +210,10 @@ impl Policy {
             }
             Mode::TunnelOnly | Mode::Proxy => {
                 if tunnel == TunnelState::Up {
+                    rules.push(Rule::session(
+                        Action::Block,
+                        Matcher::TunnelAddressElsewhere(config.tunnel.adapter_name.clone()),
+                    ));
                     rules.push(Rule::session(
                         Action::Permit,
                         Matcher::TunnelInterface(config.tunnel.adapter_name.clone()),
@@ -284,6 +296,12 @@ impl fmt::Display for Matcher {
             Self::Dhcp => f.write_str("DHCP and DHCPv6"),
             Self::NeighborDiscovery => f.write_str("IPv6 neighbor discovery"),
             Self::TunnelInterface(name) => write!(f, "tunnel adapter \"{name}\""),
+            Self::TunnelAddressElsewhere(name) => {
+                write!(
+                    f,
+                    "addresses of tunnel adapter \"{name}\" on other interfaces"
+                )
+            }
             Self::App(path) => write!(f, "app {}", path.display()),
             Self::Lan => f.write_str("local network (DNS excluded)"),
             Self::SystemDns => f.write_str("Windows DNS client (svchost.exe, port 53)"),
@@ -392,6 +410,30 @@ allow_lan = {allow_lan}
         assert!(policy.permits(&tunnel()));
         assert!(policy.permits(&app(DAEMON)));
         assert!(!policy.permits(&app(CORE)));
+    }
+
+    #[test]
+    fn a_protected_mode_keeps_tunnel_addresses_on_the_tunnel() {
+        let guard = Rule::session(
+            Action::Block,
+            Matcher::TunnelAddressElsewhere("vpn-tun".into()),
+        );
+        let config = config(false);
+        for (mode, state) in all_states() {
+            let policy = Policy::build(&config, mode, state);
+            let expected = mode != Mode::Normal && state == TunnelState::Up;
+            // First, so that nothing the tunnel permits comes before it.
+            assert_eq!(
+                policy.rules().first() == Some(&guard),
+                expected,
+                "{mode:?} / {state:?}"
+            );
+            assert_eq!(
+                policy.rules().contains(&guard),
+                expected,
+                "{mode:?} / {state:?}"
+            );
+        }
     }
 
     #[test]

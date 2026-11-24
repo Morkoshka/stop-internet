@@ -5,15 +5,18 @@
 //! another adapter with the same name is not mistaken for the tunnel.
 
 use std::fmt;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::ptr;
 
 use stopinet_core::config::TunnelConfig;
 use stopinet_core::policy::TunnelState;
 use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS, GetLastError};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    FreeMibTable, GetIfTable2, MIB_IF_ROW2, MIB_IF_TABLE2,
+    FreeMibTable, GetIfTable2, GetUnicastIpAddressTable, MIB_IF_ROW2, MIB_IF_TABLE2,
+    MIB_UNICASTIPADDRESS_ROW, MIB_UNICASTIPADDRESS_TABLE,
 };
 use windows_sys::Win32::NetworkManagement::Ndis::IfOperStatusUp;
+use windows_sys::Win32::Networking::WinSock::{AF_INET, AF_INET6, AF_UNSPEC, SOCKADDR_INET};
 use windows_sys::Win32::System::Registry::{
     HKEY, HKEY_LOCAL_MACHINE, KEY_READ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegGetValueW,
     RegOpenKeyExW,
@@ -104,6 +107,8 @@ pub struct Observation {
     pub state: TunnelState,
     /// LUID of the adapter while it is up.
     pub luid: Option<u64>,
+    /// Unicast addresses of the adapter while it is up, sorted.
+    pub addresses: Vec<IpAddr>,
     /// Why the tunnel counts as down although an adapter was found, or why
     /// the lookup failed.
     pub note: Option<String>,
@@ -114,28 +119,38 @@ impl Observation {
     pub fn environment(&self) -> Environment {
         Environment {
             tunnel_luid: self.luid,
+            tunnel_addresses: self.addresses.clone(),
         }
     }
 }
 
 /// Looks at the tunnel adapter described by the configuration.
 pub fn observe_tunnel(tunnel: &TunnelConfig) -> Observation {
-    observation(
+    let mut seen = observation(
         find_tunnel(&tunnel.adapter_name, &tunnel.driver),
         &tunnel.driver,
-    )
+    );
+    if let Some(luid) = seen.luid {
+        match unicast_addresses(luid) {
+            Ok(addresses) => seen.addresses = addresses,
+            Err(error) => seen.note = Some(format!("cannot read the addresses: {error}")),
+        }
+    }
+    seen
 }
 
 fn observation(lookup: Result<TunnelLookup, Win32Error>, driver: &str) -> Observation {
     let down = |note: Option<String>| Observation {
         state: TunnelState::Down,
         luid: None,
+        addresses: Vec::new(),
         note,
     };
     match lookup {
         Ok(TunnelLookup::Found { luid, up: true }) => Observation {
             state: TunnelState::Up,
             luid: Some(luid),
+            addresses: Vec::new(),
             note: None,
         },
         Ok(TunnelLookup::Found { up: false, .. }) => {
@@ -186,6 +201,73 @@ impl InterfaceTable {
 impl Drop for InterfaceTable {
     fn drop(&mut self) {
         // SAFETY: the table was allocated by `GetIfTable2` and is freed once.
+        unsafe { FreeMibTable(self.0.cast_const().cast()) };
+    }
+}
+
+/// Unicast addresses of the interface with this LUID, sorted, IPv4 first.
+fn unicast_addresses(luid: u64) -> Result<Vec<IpAddr>, Win32Error> {
+    let table = AddressTable::load()?;
+    let mut addresses: Vec<IpAddr> = table
+        .rows()
+        .iter()
+        // SAFETY: `Value` spans the whole `NET_LUID_LH` union, so every bit
+        // pattern written by Windows is a valid `u64`.
+        .filter(|row| unsafe { row.InterfaceLuid.Value } == luid)
+        .filter_map(|row| socket_address(&row.Address))
+        .collect();
+    addresses.sort();
+    addresses.dedup();
+    Ok(addresses)
+}
+
+fn socket_address(address: &SOCKADDR_INET) -> Option<IpAddr> {
+    // SAFETY: every member of the union starts with the address family, and
+    // only the member it names is read.
+    unsafe {
+        match address.si_family {
+            AF_INET => Some(IpAddr::V4(Ipv4Addr::from(
+                address.Ipv4.sin_addr.S_un.S_addr.to_ne_bytes(),
+            ))),
+            AF_INET6 => Some(IpAddr::V6(Ipv6Addr::from(address.Ipv6.sin6_addr.u.Byte))),
+            _ => None,
+        }
+    }
+}
+
+/// Unicast address table from `GetUnicastIpAddressTable`, freed on drop.
+struct AddressTable(*mut MIB_UNICASTIPADDRESS_TABLE);
+
+impl AddressTable {
+    fn load() -> Result<Self, Win32Error> {
+        let mut table: *mut MIB_UNICASTIPADDRESS_TABLE = ptr::null_mut();
+        // SAFETY: `table` is a valid out pointer.
+        let code = unsafe { GetUnicastIpAddressTable(AF_UNSPEC, &mut table) };
+        if code != ERROR_SUCCESS {
+            return Err(Win32Error {
+                operation: "GetUnicastIpAddressTable",
+                code,
+            });
+        }
+        Ok(Self(table))
+    }
+
+    fn rows(&self) -> &[MIB_UNICASTIPADDRESS_ROW] {
+        // SAFETY: the call succeeded, so the table holds `NumEntries` rows
+        // starting at `Table`. The pointer is derived from the table
+        // allocation itself, not from the one-element array field.
+        unsafe {
+            let count = (*self.0).NumEntries as usize;
+            let first = ptr::addr_of!((*self.0).Table).cast::<MIB_UNICASTIPADDRESS_ROW>();
+            std::slice::from_raw_parts(first, count)
+        }
+    }
+}
+
+impl Drop for AddressTable {
+    fn drop(&mut self) {
+        // SAFETY: the table was allocated by `GetUnicastIpAddressTable` and is
+        // freed once.
         unsafe { FreeMibTable(self.0.cast_const().cast()) };
     }
 }
@@ -328,6 +410,69 @@ mod tests {
         let note = seen.note.unwrap();
         assert!(note.contains("being removed"), "{note}");
         assert!(!note.contains("''"), "{note}");
+    }
+
+    #[test]
+    fn socket_addresses_become_ip_addresses() {
+        use windows_sys::Win32::Networking::WinSock::{
+            IN_ADDR, IN_ADDR_0, IN6_ADDR, IN6_ADDR_0, SOCKADDR_IN, SOCKADDR_IN6,
+        };
+
+        let v4 = SOCKADDR_INET {
+            Ipv4: SOCKADDR_IN {
+                sin_family: AF_INET,
+                sin_addr: IN_ADDR {
+                    S_un: IN_ADDR_0 {
+                        // In memory in network order, as Windows writes it.
+                        S_addr: u32::from_ne_bytes([10, 6, 7, 1]),
+                    },
+                },
+                ..Default::default()
+            },
+        };
+        assert_eq!(socket_address(&v4), Some(IpAddr::from([10, 6, 7, 1])));
+
+        let bytes = [0xfd, 0xfe, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        let v6 = SOCKADDR_INET {
+            Ipv6: SOCKADDR_IN6 {
+                sin6_family: AF_INET6,
+                sin6_addr: IN6_ADDR {
+                    u: IN6_ADDR_0 { Byte: bytes },
+                },
+                ..Default::default()
+            },
+        };
+        assert_eq!(socket_address(&v6), Some(IpAddr::from(bytes)));
+
+        let other = SOCKADDR_INET {
+            si_family: AF_UNSPEC,
+        };
+        assert_eq!(socket_address(&other), None);
+    }
+
+    #[test]
+    fn the_addresses_of_this_computer_can_be_read() {
+        // Loopback always has 127.0.0.1; any LUID with addresses shows that
+        // rows and families are read. Nothing is changed.
+        let table = AddressTable::load().unwrap();
+        let all: Vec<IpAddr> = table
+            .rows()
+            .iter()
+            .filter_map(|row| socket_address(&row.Address))
+            .collect();
+        assert!(all.contains(&IpAddr::from([127, 0, 0, 1])), "{all:?}");
+        let loopback = table
+            .rows()
+            .iter()
+            .find(|row| socket_address(&row.Address) == Some(IpAddr::from([127, 0, 0, 1])))
+            .unwrap();
+        // SAFETY: as in `unicast_addresses`.
+        let luid = unsafe { loopback.InterfaceLuid.Value };
+        assert!(
+            unicast_addresses(luid)
+                .unwrap()
+                .contains(&IpAddr::from([127, 0, 0, 1]))
+        );
     }
 
     #[test]

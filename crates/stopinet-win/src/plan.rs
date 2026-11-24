@@ -4,6 +4,7 @@
 //! [`wfp`](crate::wfp) module turns the result into API calls.
 
 use std::fmt;
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 use stopinet_core::policy::{Action, Matcher, Policy, Rule, SYSTEM_DNS_APP, Scope};
@@ -47,6 +48,11 @@ pub enum Layer {
     ForwardV4,
     /// `FWPM_LAYER_IPFORWARD_V6`.
     ForwardV6,
+    /// `FWPM_LAYER_OUTBOUND_IPPACKET_V4`: every outbound IP packet, also of
+    /// connections that are already open.
+    OutboundPacketV4,
+    /// `FWPM_LAYER_OUTBOUND_IPPACKET_V6`.
+    OutboundPacketV6,
 }
 
 impl Layer {
@@ -58,8 +64,10 @@ impl Layer {
         Self::RecvAcceptV4,
         Self::RecvAcceptV6,
     ];
-    /// Every layer stop-internet uses.
-    pub const ALL: [Self; 6] = [
+    /// Layers of a rule for all traffic: connections both ways and
+    /// forwarding. Not the packet layers: a filter there without conditions
+    /// would drop the packets of permitted connections too.
+    const ALL_TRAFFIC: [Self; 6] = [
         Self::ConnectV4,
         Self::ConnectV6,
         Self::RecvAcceptV4,
@@ -67,9 +75,24 @@ impl Layer {
         Self::ForwardV4,
         Self::ForwardV6,
     ];
+    const OUTBOUND_PACKETS: [Self; 2] = [Self::OutboundPacketV4, Self::OutboundPacketV6];
+    /// Every layer stop-internet uses.
+    pub const ALL: [Self; 8] = [
+        Self::ConnectV4,
+        Self::ConnectV6,
+        Self::RecvAcceptV4,
+        Self::RecvAcceptV6,
+        Self::ForwardV4,
+        Self::ForwardV6,
+        Self::OutboundPacketV4,
+        Self::OutboundPacketV6,
+    ];
 
     fn is_v6(self) -> bool {
-        matches!(self, Self::ConnectV6 | Self::RecvAcceptV6 | Self::ForwardV6)
+        matches!(
+            self,
+            Self::ConnectV6 | Self::RecvAcceptV6 | Self::ForwardV6 | Self::OutboundPacketV6
+        )
     }
 }
 
@@ -90,6 +113,8 @@ pub enum Field {
     RemotePort,
     /// `FWPM_CONDITION_IP_REMOTE_ADDRESS`.
     RemoteAddress,
+    /// `FWPM_CONDITION_IP_LOCAL_ADDRESS`.
+    LocalAddress,
 }
 
 /// How a condition compares.
@@ -101,6 +126,8 @@ pub enum MatchKind {
     NotEqual,
     /// `FWP_MATCH_FLAGS_ALL_SET`.
     FlagsAllSet,
+    /// `FWP_MATCH_FLAGS_NONE_SET`.
+    FlagsNoneSet,
     /// `FWP_MATCH_RANGE`, bounds included.
     Range,
 }
@@ -175,10 +202,12 @@ impl FilterSpec {
 }
 
 /// Facts about the system that a policy needs to become filters.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Environment {
     /// LUID of the tunnel adapter, when it is up.
     pub tunnel_luid: Option<u64>,
+    /// Unicast addresses of the tunnel adapter, when it is up.
+    pub tunnel_addresses: Vec<IpAddr>,
 }
 
 /// A rule that could not become filters.
@@ -248,7 +277,7 @@ impl Plan {
         };
 
         match &rule.matcher {
-            Matcher::All => add(&Layer::ALL, &|_| Vec::new()),
+            Matcher::All => add(&Layer::ALL_TRAFFIC, &|_| Vec::new()),
             Matcher::Loopback => add(&Layer::ALE, &|_| {
                 vec![Condition {
                     field: Field::Flags,
@@ -279,6 +308,27 @@ impl Plan {
                     reason: format!("tunnel adapter \"{name}\" is not available"),
                 }),
             },
+            // Without the adapter nothing is added; the rule for the tunnel
+            // interface already says so.
+            Matcher::TunnelAddressElsewhere(name) => {
+                if let Some(luid) = env.tunnel_luid {
+                    let addresses = &env.tunnel_addresses;
+                    // One filter per address family the tunnel has.
+                    let layers: Vec<Layer> = Layer::OUTBOUND_PACKETS
+                        .into_iter()
+                        .filter(|&layer| addresses.iter().any(|a| a.is_ipv6() == layer.is_v6()))
+                        .collect();
+                    if layers.is_empty() {
+                        self.skipped.push(Skipped {
+                            scope: rule.scope,
+                            reason: format!("tunnel adapter \"{name}\" has no addresses yet"),
+                        });
+                    }
+                    add(&layers, &|layer| {
+                        tunnel_address_conditions(layer, luid, addresses)
+                    });
+                }
+            }
             Matcher::App(path) => add(&Layer::ALE, &|_| {
                 vec![Condition::equal(Field::AppId, Value::AppPath(path.clone()))]
             }),
@@ -292,6 +342,31 @@ impl Plan {
             }),
         }
     }
+}
+
+/// A packet from one of the tunnel addresses of the layer's family, on an
+/// interface other than the tunnel, that is not loopback.
+fn tunnel_address_conditions(layer: Layer, luid: u64, addresses: &[IpAddr]) -> Vec<Condition> {
+    let mut conditions: Vec<Condition> = addresses
+        .iter()
+        .filter_map(|address| match (address, layer.is_v6()) {
+            (IpAddr::V4(v4), false) => Some(Value::V4Prefix(v4.octets(), 32)),
+            (IpAddr::V6(v6), true) => Some(Value::V6Prefix(v6.octets(), 128)),
+            _ => None,
+        })
+        .map(|value| Condition::equal(Field::LocalAddress, value))
+        .collect();
+    conditions.push(Condition {
+        field: Field::LocalInterface,
+        kind: MatchKind::NotEqual,
+        value: Value::U64(luid),
+    });
+    conditions.push(Condition {
+        field: Field::Flags,
+        kind: MatchKind::FlagsNoneSet,
+        value: Value::U32(LOOPBACK_FLAG),
+    });
+    conditions
 }
 
 fn udp_ports(local: u16, remote: u16) -> Vec<Condition> {
@@ -343,6 +418,26 @@ mod tests {
     use super::*;
 
     const LUID: u64 = 0x0035_0000_0000_0001;
+    const TUNNEL_V4: [u8; 4] = [10, 6, 7, 1];
+    const TUNNEL_V6: [u8; 16] = [
+        0xfd, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    ];
+
+    /// The tunnel up, with an IPv4 and an IPv6 address.
+    fn up() -> Environment {
+        Environment {
+            tunnel_luid: Some(LUID),
+            tunnel_addresses: vec![IpAddr::from(TUNNEL_V4), IpAddr::from(TUNNEL_V6)],
+        }
+    }
+
+    /// Filters on the packet layers.
+    fn guard(plan: &Plan) -> Vec<&FilterSpec> {
+        plan.filters
+            .iter()
+            .filter(|f| Layer::OUTBOUND_PACKETS.contains(&f.layer))
+            .collect()
+    }
 
     fn config(allow_lan: bool) -> Config {
         Config::from_toml(&format!(
@@ -386,17 +481,17 @@ allow_lan = {allow_lan}
 
     #[test]
     fn tunnel_up_permits_its_interface_on_all_ale_layers() {
-        let env = Environment {
-            tunnel_luid: Some(LUID),
-        };
-        let plan = plan(Mode::TunnelOnly, TunnelState::Up, env);
-        let tunnel = with_field(&plan, Field::LocalInterface);
+        let plan = plan(Mode::TunnelOnly, TunnelState::Up, up());
+        let tunnel: Vec<_> = with_field(&plan, Field::LocalInterface)
+            .into_iter()
+            .filter(|f| f.action == Action::Permit)
+            .collect();
         assert_eq!(tunnel.len(), 4);
-        assert!(tunnel.iter().all(|f| f.action == Action::Permit));
+        assert!(tunnel.iter().all(|f| Layer::ALE.contains(&f.layer)));
         assert!(
-            tunnel
-                .iter()
-                .all(|f| f.conditions[0].value == Value::U64(LUID))
+            tunnel.iter().all(
+                |f| f.conditions == [Condition::equal(Field::LocalInterface, Value::U64(LUID))]
+            )
         );
     }
 
@@ -404,7 +499,94 @@ allow_lan = {allow_lan}
     fn tunnel_up_without_luid_is_reported() {
         let plan = plan(Mode::TunnelOnly, TunnelState::Up, Environment::default());
         assert!(with_field(&plan, Field::LocalInterface).is_empty());
+        // Once: the guard of the tunnel addresses leaves it to the tunnel rule.
         assert_eq!(plan.skipped.len(), 1);
+    }
+
+    #[test]
+    fn tunnel_addresses_may_not_leave_through_another_interface() {
+        let plan = plan(Mode::TunnelOnly, TunnelState::Up, up());
+        let guard = guard(&plan);
+        assert_eq!(guard.len(), 2);
+        for filter in &guard {
+            assert_eq!(filter.action, Action::Block);
+            assert_eq!(filter.scope, Scope::Session);
+            let address = if filter.layer.is_v6() {
+                Value::V6Prefix(TUNNEL_V6, 128)
+            } else {
+                Value::V4Prefix(TUNNEL_V4, 32)
+            };
+            assert_eq!(
+                filter.conditions,
+                [
+                    Condition::equal(Field::LocalAddress, address),
+                    Condition {
+                        field: Field::LocalInterface,
+                        kind: MatchKind::NotEqual,
+                        value: Value::U64(LUID),
+                    },
+                    Condition {
+                        field: Field::Flags,
+                        kind: MatchKind::FlagsNoneSet,
+                        value: Value::U32(LOOPBACK_FLAG),
+                    },
+                ]
+            );
+        }
+        // First, before anything the tunnel permits.
+        let top = plan.filters.iter().map(|f| f.weight).max().unwrap();
+        assert!(guard.iter().all(|f| f.weight == top));
+    }
+
+    #[test]
+    fn the_guard_follows_the_address_families_of_the_tunnel() {
+        let only_v4 = Environment {
+            tunnel_addresses: vec![IpAddr::from(TUNNEL_V4)],
+            ..up()
+        };
+        let plan_v4 = plan(Mode::Proxy, TunnelState::Up, only_v4);
+        let layers: Vec<Layer> = guard(&plan_v4).iter().map(|f| f.layer).collect();
+        assert_eq!(layers, [Layer::OutboundPacketV4]);
+        assert!(plan_v4.skipped.is_empty());
+
+        let none = Environment {
+            tunnel_addresses: Vec::new(),
+            ..up()
+        };
+        let plan_none = plan(Mode::TunnelOnly, TunnelState::Up, none);
+        assert!(guard(&plan_none).is_empty());
+        assert_eq!(plan_none.skipped.len(), 1);
+        assert!(
+            plan_none.skipped[0].reason.contains("no addresses"),
+            "{:?}",
+            plan_none.skipped
+        );
+    }
+
+    #[test]
+    fn packet_layers_only_get_the_guard() {
+        let config = config(true);
+        for mode in Mode::ALL {
+            for state in TunnelState::ALL {
+                let plan = Plan::build(&Policy::build(&config, mode, state), &up());
+                for filter in &plan.filters {
+                    // Every layer in use is enumerated by status and removal.
+                    assert!(Layer::ALL.contains(&filter.layer), "{filter:?}");
+                    if Layer::OUTBOUND_PACKETS.contains(&filter.layer) {
+                        assert_eq!(filter.action, Action::Block, "{filter:?}");
+                        assert!(
+                            filter
+                                .conditions
+                                .iter()
+                                .any(|c| c.field == Field::LocalAddress),
+                            "{filter:?}"
+                        );
+                    }
+                }
+                let guarded = mode != Mode::Normal && state == TunnelState::Up;
+                assert_eq!(!guard(&plan).is_empty(), guarded, "{mode:?} / {state:?}");
+            }
+        }
     }
 
     #[test]
@@ -433,9 +615,7 @@ allow_lan = {allow_lan}
 
     #[test]
     fn earlier_rules_get_higher_weights() {
-        let env = Environment {
-            tunnel_luid: Some(LUID),
-        };
+        let env = up();
         let plan = plan(Mode::TunnelOnly, TunnelState::Up, env);
         let weights: Vec<u64> = plan.filters.iter().map(|f| f.weight).collect();
         assert!(weights.windows(2).all(|w| w[0] >= w[1]), "{weights:?}");
@@ -466,14 +646,13 @@ allow_lan = {allow_lan}
 
     #[test]
     fn persistent_filters_are_the_same_in_every_state() {
-        let env = Environment {
-            tunnel_luid: Some(LUID),
-        };
-        let reference = plan(Mode::TunnelOnly, TunnelState::Down, env).only(Scope::Persistent);
+        let env = up();
+        let reference =
+            plan(Mode::TunnelOnly, TunnelState::Down, env.clone()).only(Scope::Persistent);
         assert!(!reference.filters.is_empty());
         for mode in Mode::ALL {
             for state in TunnelState::ALL {
-                let persistent = plan(mode, state, env).only(Scope::Persistent);
+                let persistent = plan(mode, state, env.clone()).only(Scope::Persistent);
                 assert_eq!(persistent, reference, "{mode:?} / {state:?}");
             }
         }
@@ -481,9 +660,7 @@ allow_lan = {allow_lan}
 
     #[test]
     fn session_filters_outweigh_the_baseline() {
-        let env = Environment {
-            tunnel_luid: Some(LUID),
-        };
+        let env = up();
         let plan = plan(Mode::TunnelOnly, TunnelState::Up, env);
         let session = plan.only(Scope::Session);
         let persistent = plan.only(Scope::Persistent);

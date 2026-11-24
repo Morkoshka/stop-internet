@@ -11,6 +11,7 @@
 //! 5. On stop, close the pipe and the dynamic session. The baseline keeps
 //!    blocking.
 
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
@@ -252,7 +253,7 @@ struct Follower {
     /// The tunnel as last seen.
     tunnel: TunnelState,
     /// Mode, tunnel state and adapter of the rules in place.
-    applied: Option<(Mode, TunnelState, Option<u64>)>,
+    applied: Option<(Mode, TunnelState, Option<u64>, Vec<IpAddr>)>,
     last_note: Option<String>,
 }
 
@@ -276,9 +277,9 @@ impl Follower {
     ) -> Result<(), String> {
         let now = observe_tunnel(&config.tunnel);
         self.tunnel = now.state;
-        let key = (mode, now.state, now.luid);
+        let key = (mode, now.state, now.luid, now.addresses.clone());
 
-        if self.applied != Some(key) {
+        if self.applied.as_ref() != Some(&key) {
             let policy = Policy::build(config, mode, now.state);
             let plan = Plan::build(&policy, &now.environment());
             // Without the persistent baseline the dynamic session carries
