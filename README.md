@@ -224,6 +224,7 @@ mode back to the one that fits the system proxy.
 | `tools/build-installer.ps1` | builds the programs and the installer |
 | `tools/diag.ps1` | read-only, anonymized network diagnostics |
 | `tools/blocked.ps1` | anonymized report of blocked connections (turns on auditing while it runs) |
+| `tools/leaks.ps1` | anonymized report of what left through the physical adapter (runs a pktmon capture while it runs) |
 
 </details>
 
