@@ -20,10 +20,9 @@ English · [Русский](README.ru.md)
 </div>
 
 > [!WARNING]
-> Early development. The service, the tray icon and the command-line tool
-> have passed the manual tests on a real machine; the installer is new.
-> There are no release builds yet: you build the programs and the installer
-> from source.
+> Early development. Every part, the installer included, has passed the
+> manual tests on a real machine, but there are no release builds yet: you
+> build the programs and the installer from source.
 
 ## Why
 
@@ -235,7 +234,7 @@ mode back to the one that fits the system proxy.
 - [x] Tunnel monitor
 - [x] Windows service: persistent and boot-time filters
 - [x] Tray icon, mode switching, UAC, timed normal mode, automatic choice by the system proxy
-- [ ] Installer package and recovery guide
+- [x] Installer package and recovery guide
 - [ ] Full test checklist and releases
 
 ## License
