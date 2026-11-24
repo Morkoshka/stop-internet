@@ -20,9 +20,10 @@ English · [Русский](README.ru.md)
 </div>
 
 > [!WARNING]
-> Early development. Every part works and has passed the manual tests on a
-> real machine, but there is no installer or release build yet: you build
-> it from source.
+> Early development. The service, the tray icon and the command-line tool
+> have passed the manual tests on a real machine; the installer is new.
+> There are no release builds yet: you build the programs and the installer
+> from source.
 
 ## Why
 
@@ -110,8 +111,10 @@ the WFP mapping and the reasons behind each decision.
 
 ## Getting started
 
-**Requirements:** Windows 10 or 11, [Rust](https://rustup.rs) with the MSVC
-toolchain, an elevated PowerShell for everything that installs.
+**Requirements:** Windows 10 or 11 on x64, [Rust](https://rustup.rs) with
+the MSVC toolchain, [Inno Setup](https://jrsoftware.org/isinfo.php) 6.4 or
+later for the installer, an elevated PowerShell for everything that
+installs.
 
 1. Build and run the tests:
 
@@ -136,23 +139,44 @@ toolchain, an elevated PowerShell for everything that installs.
    .\target\release\stopinet.exe trial --config config\stopinet.local.toml
    ```
 
-4. Install. `--session-only` keeps nothing persistent, so a reboot or a
-   stop of the service leaves the machine as it was. Run `install` again
-   without it for the persistent baseline:
+4. Build the installer:
+
+   ```powershell
+   .\tools\build-installer.ps1
+   ```
+
+   It writes `target\installer\stop-internet-<version>-setup.exe`. Run it
+   with your configuration, given by its full path:
+
+   ```powershell
+   .\target\installer\stop-internet-<version>-setup.exe /CONFIG="$PWD\config\stopinet.local.toml"
+   ```
+
+   The wizard speaks Russian or English, like Windows. "Trial mode" on its
+   tasks page keeps nothing persistent, so a stop of the service leaves the
+   machine as it was; run the installer again without it for the
+   persistent baseline. Without `/CONFIG` the installer keeps the installed
+   configuration, or installs the example for Happ.
+
+   The programs go to `C:\Program Files\stop-internet`, the configuration
+   to `C:\ProgramData\stop-internet`, and the tray icon starts at every
+   sign-in. The Start menu gets the icon, "emergency off" and the recovery
+   guide; Settings → Apps uninstalls it.
+
+   Without the installer, the command-line tool does the same, except the
+   Start menu and Settings → Apps; `--session-only` is the trial mode:
 
    ```powershell
    .\target\release\stopinet.exe install --config config\stopinet.local.toml --session-only
    ```
 
-   The programs go to `C:\Program Files\stop-internet`, the configuration
-   to `C:\ProgramData\stop-internet`, and the tray icon starts at every
-   sign-in.
-
 > [!CAUTION]
-> Keep the way out at hand. `stopinet panic` stops the service and removes
-> every filter, the persistent ones included; it needs no network.
-> Protection returns when the service starts again. Go through the
-> [manual tests](docs/testing.md) before relying on it.
+> Keep the way out at hand: Start menu → "stop-internet - emergency off",
+> or `stopinet panic`. Both stop the service and remove every filter, the
+> persistent ones included, and need no network. Protection returns when
+> the service starts again. The [recovery guide](docs/recovery.md) covers
+> the rest. Go through the [manual tests](docs/testing.md) before relying
+> on it.
 
 ### Everyday use
 
@@ -163,7 +187,7 @@ The tray icon is all you need. From a terminal (`stopinet` is
 stopinet status                      # service, mode, filters, tunnel
 stopinet mode proxy                  # or tunnel
 stopinet mode normal --minutes 15    # elevated terminal only
-stopinet uninstall                   # configuration and log stay
+stopinet uninstall                   # without the installer; configuration and log stay
 ```
 
 While "Automatic" is on in the tray menu, the tray sets the protected
@@ -175,6 +199,9 @@ mode back to the one that fits the system proxy.
   lifecycle and the reasons behind the decisions.
 - **[Manual tests](docs/testing.md)**: what to check on a real machine,
   step by step.
+- **[Recovery guide](docs/recovery.md)**: what to do when the internet does
+  not work, from turning protection off for a while to programs gone
+  missing.
 - **[Wiki](https://github.com/Morkoshka/stop-internet/wiki)**: the same
   documents, in English and Russian.
 
@@ -188,8 +215,10 @@ mode back to the one that fits the system proxy.
 | `crates/stopinet-service` | Windows service |
 | `crates/stopinet-tray` | tray icon |
 | `crates/stopinet-cli` | `stopinet` command-line tool |
+| `installer/` | Inno Setup script of the installer |
 | `config/` | example configuration |
-| `docs/` | design, manual tests, pictures |
+| `docs/` | design, manual tests, recovery guide, pictures |
+| `tools/build-installer.ps1` | builds the programs and the installer |
 | `tools/diag.ps1` | read-only, anonymized network diagnostics |
 | `tools/blocked.ps1` | anonymized report of blocked connections (turns on auditing while it runs) |
 

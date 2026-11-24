@@ -223,7 +223,10 @@ every mode and state.
   stop the service first, because its session filters go away only with its
   session, then remove every object of the stop-internet provider,
   persistent and boot-time ones included. `panic` keeps the service
-  installed: protection returns when it starts again.
+  installed: protection returns when it starts again. The Start menu
+  shortcut "emergency off" runs `panic` without a terminal. If `uninstall`
+  cannot remove every object, it keeps the programs, so that it can be run
+  again.
 - **Session-only mode.** `stopinet install --session-only` starts the service
   with `--session-only`. It installs nothing persistent and keeps every rule,
   the baseline included, in its dynamic session, like a trial without a time
@@ -335,6 +338,12 @@ administrator rights:
   as `stopinet-tray.exe --normal <minutes>`. That instance only sends the
   request and shows a message if it fails. It is the tray and not
   `stopinet.exe`, so that no console window opens.
+- For emergencies there is `stopinet-tray.exe --panic`, the "emergency off"
+  shortcut of the installer. It asks for confirmation, starts itself again
+  through a UAC prompt as `--panic-now`, runs `stopinet.exe panic` from its
+  own folder without a console window and shows the result. It needs no
+  service, so it helps where the menu cannot: the service is stopped, does
+  not start or does not answer.
 - There are no notifications: the state is in the icon, and with "do not
   disturb" on they would go unseen anyway. They can be added later.
 - `stopinet install` adds the tray to
@@ -383,6 +392,7 @@ Limits:
 | `stopinet-service` | LocalSystem service | WFP filters, tunnel, power and logon events, named pipe server |
 | `stopinet-tray` | user session | status icon, menu in Russian or English, mode switching, following the system proxy; its window and registry code is its own unsafe code |
 | `stopinet` | CLI | policy dry run, trial, install, uninstall, panic, status, mode |
+| `installer/` | Inno Setup | wizard, entry in Settings → Apps, Start menu shortcuts; wraps `stopinet install` and `uninstall`, see [Installer](#installer) |
 
 - The tray and the CLI talk to the service over a named pipe. Its security
   descriptor admits SYSTEM, Administrators and the interactive user.
@@ -399,6 +409,47 @@ Limits:
   (start, stop, mode changes, tunnel up and down, errors), never remote
   addresses. Over 1 MiB it starts over and keeps one previous file.
 
+## Installer
+
+`installer/stop-internet.iss` builds `stop-internet-<version>-setup.exe`
+with Inno Setup 6.4 or later; `tools/build-installer.ps1` builds the
+programs and passes the version from `Cargo.toml`. The installer is a
+wrapper: the programs, the service, the filters and the autostart of the
+icon stay the job of `stopinet install` and `stopinet uninstall`.
+
+- **Install and upgrade.** After the "Ready" page Setup extracts the three
+  programs into its temporary folder and runs `stopinet install` from
+  there, without a window. That closes the running icons, stops the
+  service, copies the programs to `C:\Program Files\stop-internet`,
+  registers and starts the service and starts the icon without elevation.
+  While the service is stopped, the baseline keeps blocking. If `install`
+  fails, Setup stops with its output and adds nothing of its own; the setup
+  log in `%TEMP%` has the output as well.
+- **Configuration.** An installed configuration is kept. Without one, Setup
+  installs the example for Happ, and first warns if `happd.exe` is not where
+  the example expects it: with another VPN client that configuration blocks
+  the internet. `/CONFIG=<file>` installs another configuration, also in a
+  silent install (`/VERYSILENT`).
+- **Trial mode.** A task of the wizard, off by default, passes
+  `--session-only`.
+- **Start menu.** The icon, "emergency off" (see
+  [Tray icon and named pipe](#tray-icon-and-named-pipe)) and the
+  [recovery guide](recovery.md) in the language of the wizard. The guide and
+  the example configuration are in the program folder too, readable
+  without the network.
+- **Uninstall.** Settings → Apps runs `stopinet uninstall` first. If it
+  fails, the uninstaller stops before it deletes anything, so the programs
+  that remove the filters stay. Then it asks whether to delete
+  `C:\ProgramData\stop-internet`; a silent uninstall keeps it. The setting
+  of "Automatic" in `HKCU` stays, as with `stopinet uninstall`.
+- The folders are fixed, as in the programs: Setup refuses to run on a
+  Windows whose program folders are not `C:\Program Files` and
+  `C:\ProgramData`. It runs on x64 Windows 10 and 11 only: the service and
+  WFP are not tested under x64 emulation on Arm64.
+- The programs and the installer are not signed. The UAC prompt shows
+  "Unknown publisher", and SmartScreen may warn about a downloaded
+  installer.
+
 ## Decisions
 
 - **WFP instead of Windows Firewall rules.** Windows Firewall has dozens of
@@ -412,6 +463,14 @@ Limits:
   affect network speed. Rust gives a small native service without a runtime
   or garbage collector, memory safety, and typed Windows API bindings from
   Microsoft's `windows` crate.
+- **Inno Setup instead of MSI.** The installer only has to wrap
+  `stopinet install`, speak Russian or English like the tray and stop
+  cleanly when `install` or `uninstall` fails. Inno Setup does this with one
+  script and its own uninstaller, and it is preinstalled on the Windows
+  runners of GitHub Actions. An MSI would describe the service, the
+  permissions and the removal of the filters again in WiX, next to the
+  tested Rust code, or call `stopinet.exe` from custom actions anyway, and
+  its wizard has one language per package.
 - **No tunnel health probes.** A tunnel that is up but broken passes nothing,
   so it is already safe. Health is a possible future status indicator, not a
   security feature.

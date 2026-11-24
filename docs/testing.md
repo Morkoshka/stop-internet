@@ -6,9 +6,10 @@ Everything that installs filters or services is tested by hand on a real
 machine. Unit tests cover the logic; these steps cover what only Windows can
 show. Each step says what it changes, how to undo it and what to expect.
 
-This page covers the Windows service (roadmap step 4) and the tray icon with
-mode switching and the automatic choice of the mode (step 5). The full
-checklist with traffic captures comes with step 7.
+This page covers the Windows service (roadmap step 4), the tray icon with
+mode switching and the automatic choice of the mode (step 5), and the
+installer with the emergency switch-off (step 6). The full checklist with
+traffic captures comes with step 7.
 
 ## Before you start
 
@@ -118,3 +119,25 @@ off; turn it on again before the next step.
 | D7 | Happ in TUN mode, "Automatic" on. In the elevated window: `stopinet mode proxy` | Within a second the tray sets "Tunnel only" again; the log shows both requests. This is expected while "Automatic" is on. |
 | D8 | Happ in system proxy mode. `Restart-Service stopinet` | The log shows a new start of the service in tunnel-only mode, and within about 2 s "mode Proxy asked". |
 | D9 | Menu: "Close icon", start the icon again as in C13, open the menu | "Automatic" is as it was. Turn it off, close the icon and start it again: still off. Turn it on at the end. |
+
+## E. Installer and recovery
+
+The installer takes over an installation made with `stopinet install`, so
+start as after D1: the persistent baseline and your configuration
+installed. Build it with Inno Setup 6.4 or later (`winget install --id
+JRSoftware.InnoSetup -e`); building changes nothing outside `target\`.
+Steps E2 to E7 work as well when started by double-clicking the installer
+in Explorer.
+
+| # | Do | Expect |
+|---|---|---|
+| E1 | `.\tools\build-installer.ps1` | "Built target\installer\stop-internet-0.1.0-setup.exe". |
+| E2 | `.\target\installer\stop-internet-0.1.0-setup.exe`; UAC: Yes (unknown publisher); keep "Trial mode" off; Install | The wizard speaks the display language of Windows. "Ready to Install" shows "Configuration: keep C:\ProgramData\stop-internet\config.toml". A few seconds of "Preparing to Install": the icon disappears and comes back. `stopinet status`: running, persistent, the same filters as before; the log shows a stop and a new start; the configuration is unchanged. Changes: Start menu folder "stop-internet" with three shortcuts, "stop-internet" in Settings, Apps, `docs\`, `config.example.toml`, `LICENSE.txt` and `unins000.*` in `C:\Program Files\stop-internet`. Undo: E9. |
+| E3 | Start menu: "stop-internet - recovery guide"; then "stop-internet" | The guide opens in Notepad, in the language of the wizard. The second shortcut adds no second icon. |
+| E4 | Run the installer again | As in E2: an upgrade over itself. Settings, Apps still lists stop-internet once. |
+| E5 | Start menu: "stop-internet - emergency off". Answer **No**; then again, **Yes**, and **No** in the UAC prompt | Nothing changes, `stopinet status` as before. |
+| E6 | The same, **Yes** and UAC **Yes** | A message "Protection is off: the service is stopped and the filters of stop-internet are removed". `stopinet status`: stopped, provider none, 0 filters; the icon is red, "Service stopped"; sites load with Happ disconnected. The `netsh wfp` check of the [recovery guide](recovery.md#check-that-nothing-is-left) counts 0. `Start-Service stopinet`: protected again, the count is above 0. |
+| E7 | A broken configuration: `Set-Content $env:TEMP\broken.toml 'tunnel = ['`, then `.\target\installer\stop-internet-0.1.0-setup.exe /CONFIG="$env:TEMP\broken.toml"`, Install | "Ready to Install" names the file. Setup stops on "Preparing to Install" with "stopinet install did not finish" and the parse error. Nothing changes: `stopinet status` as in E2, no second entry in Settings, Apps. Undo: `Remove-Item $env:TEMP\broken.toml`. |
+| E8 | Silent upgrade: `(Start-Process .\target\installer\stop-internet-0.1.0-setup.exe '/VERYSILENT' -Wait -PassThru).ExitCode` | `0`, no windows; `stopinet status` as in E2. |
+| E9 | Settings, Apps, stop-internet, Uninstall; answer **No** to deleting the configuration | The icon disappears. `Get-Service stopinet` finds nothing, the `netsh wfp` check counts 0, `C:\Program Files\stop-internet` and the Start menu folder are gone, `C:\ProgramData\stop-internet` stays. Sites load with Happ disconnected. |
+| E10 | Run the installer with "Trial mode" on | `stopinet status`: session-only, provider "session". `Stop-Service stopinet` removes every filter, `Start-Service stopinet` brings them back. Then run it again with "Trial mode" off (the wizard remembers the last choice): persistent, as in E2. |
