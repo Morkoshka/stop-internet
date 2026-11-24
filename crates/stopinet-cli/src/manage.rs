@@ -271,7 +271,7 @@ pub fn panic() -> Result<(), String> {
     if report.is_complete() {
         println!(
             "Protection is off. It returns when the service starts again: after a restart \
-             of Windows or with `sc start {SERVICE_NAME}`. To remove it for good: \
+             of Windows or with `sc.exe start {SERVICE_NAME}`. To remove it for good: \
              stopinet uninstall"
         );
         Ok(())
