@@ -100,10 +100,11 @@ flowchart LR
 The service keeps a persistent baseline of WFP filters that blocks
 everything except loopback, DHCP, IPv6 neighbor discovery and excluded apps.
 While the tunnel adapter is up, it adds session filters for the tunnel and
-for the VPN daemon that carries it. The baseline survives reboots and
-crashes; the session filters vanish with the service. A sublayer of its own
-with the highest weight means no allow rule of Windows Firewall or other
-software can open a hole.
+for the VPN daemon that carries it, and drops every packet with the
+tunnel's address that tries to leave through another adapter. The baseline
+survives reboots and crashes; the session filters vanish with the service.
+A sublayer of its own with the highest weight means no allow rule of
+Windows Firewall or other software can open a hole.
 
 The [design document](docs/design.md) has the threat model, the rule table,
 the WFP mapping and the reasons behind each decision.

@@ -21,6 +21,10 @@ The first release.
 - Session filters for the tunnel adapter and the VPN daemon while the
   tunnel is up; a drop of the tunnel blocks traffic within about 2
   seconds.
+- A packet filter that keeps the tunnel's addresses on the tunnel adapter:
+  a connection opened through the tunnel cannot go on sending through the
+  physical adapter when the routes of the tunnel go away, as after a
+  wake-up.
 - Modes: tunnel only, the default after every boot, wake-up and sign-in;
   proxy, for a VPN client in system proxy mode; normal internet for 15
   minutes, an hour or until the next reboot, sleep or sign-in, behind a

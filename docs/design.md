@@ -131,16 +131,17 @@ mode and state without touching the system.
 | # | Rule | Scope | When |
 |---|---|---|---|
 | 1 | permit all traffic | session | normal internet |
-| 2 | permit traffic on the tunnel adapter | session | protected mode, tunnel up |
-| 3 | permit tunnel daemon (`happd.exe`) | session | protected mode, tunnel up |
-| 4 | permit proxy core (`xray.exe`) | session | proxy mode |
-| 5 | permit DNS queries of the Windows DNS client (`svchost.exe`, remote port 53, outbound) | session | proxy mode, tunnel down |
-| 6 | permit loopback | persistent | always |
-| 7 | permit DHCP and DHCPv6 | persistent | always |
-| 8 | permit IPv6 neighbor discovery | persistent | always |
-| 9 | permit apps from the `direct` list | persistent | always |
-| 10 | permit local network, DNS excluded | persistent | if `allow_lan` |
-| 11 | block everything | persistent | always |
+| 2 | block packets with an address of the tunnel adapter on other interfaces, loopback excluded | session | protected mode, tunnel up |
+| 3 | permit traffic on the tunnel adapter | session | protected mode, tunnel up |
+| 4 | permit tunnel daemon (`happd.exe`) | session | protected mode, tunnel up |
+| 5 | permit proxy core (`xray.exe`) | session | proxy mode |
+| 6 | permit DNS queries of the Windows DNS client (`svchost.exe`, remote port 53, outbound) | session | proxy mode, tunnel down |
+| 7 | permit loopback | persistent | always |
+| 8 | permit DHCP and DHCPv6 | persistent | always |
+| 9 | permit IPv6 neighbor discovery | persistent | always |
+| 10 | permit apps from the `direct` list | persistent | always |
+| 11 | permit local network, DNS excluded | persistent | if `allow_lan` |
+| 12 | block everything | persistent | always |
 
 Persistent rules never depend on the mode or the tunnel. They are what the
 Base Filtering Engine enforces by itself after a reboot or a service crash, so
@@ -157,6 +158,8 @@ every mode and state.
   holes in the baseline.
 - Layers: `ALE_AUTH_CONNECT` and `ALE_AUTH_RECV_ACCEPT` for IPv4 and IPv6.
   Forwarded traffic (hotspot, Hyper-V NAT) is blocked by "block everything".
+  Rule 2 alone is on `OUTBOUND_IPPACKET`, which sees every packet, see
+  [Decisions](#decisions).
 - Conditions:
 
 | Matcher | WFP condition |
@@ -165,6 +168,7 @@ every mode and state.
 | DHCP | UDP, local port 68 / remote 67, local 546 / remote 547 |
 | Neighbor discovery | ICMPv6 type 133 to 137 |
 | Tunnel adapter | `FWPM_CONDITION_IP_LOCAL_INTERFACE` equals the adapter LUID |
+| Tunnel addresses on other interfaces | `FWPM_CONDITION_IP_LOCAL_ADDRESS` is an address of the adapter, `FWPM_CONDITION_IP_LOCAL_INTERFACE` is not its LUID, `FWPM_CONDITION_FLAGS` without `FWP_CONDITION_FLAG_IS_LOOPBACK` |
 | App | `FWPM_CONDITION_ALE_APP_ID` from `FwpmGetAppIdFromFileName0` |
 | Local network | `FWPM_CONDITION_IP_REMOTE_ADDRESS` in private, link-local and multicast ranges, remote port not 53 |
 
@@ -469,6 +473,19 @@ icon stay the job of `stopinet install` and `stopinet uninstall`.
   sublayer of our own gives precedence over other permits, persistence across
   reboots and per-interface conditions. WireGuard for Windows and Mullvad use
   the same approach.
+- **A packet guard for the tunnel addresses.** The ALE layers authorize a
+  connection once, when it opens. A connection opened through the tunnel
+  keeps the tunnel's address and goes on sending when the routes of the
+  tunnel go away, while the adapter itself still counts as up. A capture
+  after a wake-up showed exactly that: connection attempts with the
+  tunnel's address left through the physical adapter. Rule 2 drops such
+  packets on `OUTBOUND_IPPACKET`, which sees every packet, retransmissions
+  included. It exists only while the tunnel is up; once the service sees
+  the tunnel down, the session filters change, and WFP authorizes the open
+  connections again, against the baseline. The service reads the addresses
+  of the adapter together with its state, every 2 seconds and on interface
+  changes, so an address that the client assigns a moment after the
+  adapter comes up gets its filter too.
 - **Rust.** Filtering happens in the Windows kernel, so the language does not
   affect network speed. Rust gives a small native service without a runtime
   or garbage collector, memory safety, and typed Windows API bindings from
