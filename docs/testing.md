@@ -8,8 +8,8 @@ show. Each step says what it changes, how to undo it and what to expect.
 
 This page covers the Windows service (roadmap step 4), the tray icon with
 mode switching and the automatic choice of the mode (step 5), the
-installer with the emergency switch-off (step 6), and captures of what
-leaves through the physical adapter (step 7).
+installer with the emergency switch-off (step 6), captures of what leaves
+through the physical adapter, and the release (step 7).
 
 ## Before you start
 
@@ -203,3 +203,19 @@ B7 checks it.
 | F8 | IPv6 and Teredo: look at the reports of F2 and F3 | No IPv6 addresses and no port 3544 (Teredo) among the public addresses. Without the tunnel the probe to 2606:4700:4700::1111 fails. |
 | F9 | An excluded app. Connect Happ, start a game from `direct`; `leaks.ps1 -Seconds 120`; after 40 s disconnect Happ and keep playing | The game stays online. "Sent to the internet" lists its servers: before the disconnect with program `happd` (Happ takes its exclusions out of the tunnel itself), after it with the program of the game. Apart from them, only the VPN server. Connect Happ again at the end. |
 | F10 | Proxy. Happ in system proxy mode (TUN off), tray menu: Proxy; `leaks.ps1 -Seconds 60`; open sites | Sites load. "Sent to the internet" holds only the server with program `xray`. DNS from `svchost` to the router, or to the DNS server of the network settings: in this mode system DNS is open on purpose, see the [design](design.md). The probes fail: `powershell` does not use the proxy, and it is not `svchost`. |
+
+## G. Before a release
+
+Release builds come from GitHub Actions, the Release workflow. A version
+tag builds the programs and the installer from its commit with the
+dependencies of `Cargo.lock`, computes SHA-256, signs a build provenance
+attestation and creates a draft release. A person publishes the draft,
+after the steps below. The example is for version 0.1.0.
+
+| # | Do | Expect |
+|---|---|---|
+| G1 | The version in `Cargo.toml` (`[workspace.package]`), then `cargo build`, which updates `Cargo.lock`. In `CHANGELOG.md` and `CHANGELOG.ru.md` replace `## Unreleased` with `## 0.1.0 - <date>` and add an empty `## Unreleased` above it. Preview the release text: `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\release-notes.ps1 -Version 0.1.0`. Commit and push | The release text in both languages. CI is green. |
+| G2 | `git tag -a v0.1.0 -m "stop-internet 0.1.0"`, then `git push origin v0.1.0` | Release starts in Actions; a few minutes later the Releases page has a draft with `stop-internet-0.1.0-setup.exe` and `SHA256SUMS.txt`. If the tag does not match the version, or the changelogs have no section for it, the workflow stops without creating anything: delete the tag (`git push origin :refs/tags/v0.1.0`, then `git tag -d v0.1.0`), fix it, repeat. |
+| G3 | Download both files from the page of the draft into an empty folder; there run `Get-FileHash .\stop-internet-0.1.0-setup.exe` and `Get-Content .\SHA256SUMS.txt`; then `gh attestation verify .\stop-internet-0.1.0-setup.exe --repo Morkoshka/stop-internet` | The hashes match (letter case does not matter); `gh` reports a successful verification and names the Release workflow and the tag. |
+| G4 | Install the downloaded installer over the current version, as in E2; go through B2, C2, C3, E6 and F1–F3 | As in those steps. |
+| G5 | Publish the draft: the button on the page of the release, or `gh release edit v0.1.0 --draft=false` | The release is public and marked Latest; the link to the releases in the [recovery guide](recovery.md) leads to it. |

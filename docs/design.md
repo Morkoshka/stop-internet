@@ -451,6 +451,14 @@ icon stay the job of `stopinet install` and `stopinet uninstall`.
 - The programs and the installer are not signed. The UAC prompt shows
   "Unknown publisher", and SmartScreen may warn about a downloaded
   installer.
+- Releases are built by GitHub Actions only. A version tag runs the
+  Release workflow: it builds the tagged commit with the dependencies of
+  `Cargo.lock`, runs the tests and puts the installer into a draft release
+  with its SHA-256 and a build provenance attestation signed through
+  Sigstore, so `gh attestation verify` shows that a downloaded installer
+  came from that workflow and tag. The text of the release comes from the
+  changelogs. The draft is published by hand, after section G of the
+  [manual tests](testing.md).
 
 ## Decisions
 
