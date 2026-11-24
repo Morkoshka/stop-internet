@@ -3,7 +3,7 @@
 ; The installer wraps `stopinet install` and `stopinet uninstall`, which do
 ; the real work: the programs in Program Files, the service, the WFP filters
 ; and the autostart of the tray icon. Inno Setup adds the wizard in English or
-; Russian, the entry in Settings > Apps, the shortcuts in the Start menu and an
+; Russian, the entry in Settings > Apps, an optional Start menu folder and an
 ; offline copy of the recovery guide.
 ;
 ; - Install: the programs are extracted to {tmp}, and {tmp}\stopinet.exe
@@ -67,7 +67,12 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
+Name: "startmenu"; Description: "{cm:StartMenuTask}"
 Name: "trial"; Description: "{cm:TrialTask}"; Flags: unchecked
+
+[InstallDelete]
+; The folder of an earlier installation, when the task is now off.
+Type: filesandordirs; Name: "{autoprograms}\stop-internet"; Tasks: not startmenu
 
 [Files]
 ; Put in place by `stopinet install`, see PrepareToInstall.
@@ -82,16 +87,18 @@ Source: "..\config\stopinet.example.toml"; DestDir: "{app}"; DestName: "config.e
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"
 
 [Icons]
-Name: "{autoprograms}\stop-internet\stop-internet"; Filename: "{app}\stopinet-tray.exe"; Comment: "{cm:IconComment}"
-Name: "{autoprograms}\stop-internet\{cm:PanicName}"; Filename: "{app}\stopinet-tray.exe"; Parameters: "--panic"; Comment: "{cm:PanicComment}"
-Name: "{autoprograms}\stop-internet\{cm:GuideName}"; Filename: "{win}\notepad.exe"; Parameters: """{app}\docs\recovery.md"""; Languages: en
-Name: "{autoprograms}\stop-internet\{cm:GuideName}"; Filename: "{win}\notepad.exe"; Parameters: """{app}\docs\recovery.ru.md"""; Languages: ru
+Name: "{autoprograms}\stop-internet\stop-internet"; Filename: "{app}\stopinet-tray.exe"; Comment: "{cm:IconComment}"; Tasks: startmenu
+Name: "{autoprograms}\stop-internet\{cm:PanicName}"; Filename: "{app}\stopinet-tray.exe"; Parameters: "--panic"; Comment: "{cm:PanicComment}"; Tasks: startmenu
+Name: "{autoprograms}\stop-internet\{cm:GuideName}"; Filename: "{win}\notepad.exe"; Parameters: """{app}\docs\recovery.md"""; Languages: en; Tasks: startmenu
+Name: "{autoprograms}\stop-internet\{cm:GuideName}"; Filename: "{win}\notepad.exe"; Parameters: """{app}\docs\recovery.ru.md"""; Languages: ru; Tasks: startmenu
 
 [Run]
 Filename: "{win}\notepad.exe"; Parameters: """{app}\docs\recovery.md"""; Description: "{cm:OpenGuide}"; Flags: postinstall unchecked skipifsilent nowait runasoriginaluser; Languages: en
 Filename: "{win}\notepad.exe"; Parameters: """{app}\docs\recovery.ru.md"""; Description: "{cm:OpenGuide}"; Flags: postinstall unchecked skipifsilent nowait runasoriginaluser; Languages: ru
 
 [CustomMessages]
+en.StartMenuTask=Start menu folder: the icon, emergency off and the recovery guide
+ru.StartMenuTask=Папка в меню «Пуск»: значок, аварийное отключение и инструкция по восстановлению
 en.TrialTask=Trial mode: nothing persistent, stopping the service removes every filter (for the first tests)
 ru.TrialTask=Пробный режим: ничего постоянного, остановка службы снимает все фильтры (для первых проверок)
 en.IconComment=Status icon and mode switching

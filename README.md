@@ -163,8 +163,9 @@ installs.
 
    The programs go to `C:\Program Files\stop-internet`, the configuration
    to `C:\ProgramData\stop-internet`, and the tray icon starts at every
-   sign-in. The Start menu gets the icon, "emergency off" and the recovery
-   guide; Settings → Apps uninstalls it.
+   sign-in. A Start menu folder, which the wizard lets you leave out,
+   holds the icon, "emergency off" and the recovery guide; Settings → Apps
+   uninstalls it.
 
    Without the installer, the command-line tool does the same, except the
    Start menu and Settings → Apps; `--session-only` is the trial mode:

@@ -6,8 +6,9 @@
 от самого быстрого шага до крайнего случая. Ни один шаг не требует сети.
 
 Копии этой инструкции: на компьютере в `C:\Program Files\stop-internet\docs`
-и в меню «Пуск» («stop-internet — инструкция по восстановлению»), для
-телефона — в [вики](https://github.com/Morkoshka/stop-internet/wiki).
+и, если установщик создал папку в меню «Пуск», там («stop-internet —
+инструкция по восстановлению»), для телефона — в
+[вики](https://github.com/Morkoshka/stop-internet/wiki).
 
 Команды — для PowerShell от имени администратора (Win+X, «Терминал
 (администратор)»). Программы нет в `PATH`; эта команда включает короткую
@@ -29,7 +30,9 @@ Set-Alias stopinet 'C:\Program Files\stop-internet\stopinet.exe'
   говорит, что именно. Подключите VPN-клиент или идите дальше.
 - **Серый с чертой.** Защита выключена, stop-internet ничего не блокирует.
 - **Значка нет.** Его закрыли, или он не запустился; запустите его из меню
-  «Пуск» («stop-internet»). Защита работает и без него.
+  «Пуск» («stop-internet») или через Win+R:
+  `"C:\Program Files\stop-internet\stopinet-tray.exe"`. Защита работает и
+  без него.
 
 ## 1. Выключить защиту на время
 
@@ -49,7 +52,8 @@ stopinet mode normal --minutes 0
 Если служба не работает или не отвечает, её меню не поможет.
 
 - Меню «Пуск» → **stop-internet — аварийное отключение** → «Да» → запрос
-  UAC.
+  UAC. Без папки в «Пуске» то же самое через Win+R:
+  `"C:\Program Files\stop-internet\stopinet-tray.exe" --panic`.
 - Или в терминале:
 
   ```powershell

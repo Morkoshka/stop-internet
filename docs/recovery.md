@@ -6,8 +6,9 @@ What to do when the internet does not work and stop-internet may be the
 reason: from the quickest step to the last resort. None of the steps needs
 the network.
 
-Copies of this guide: `C:\Program Files\stop-internet\docs` and the Start
-menu ("stop-internet - recovery guide") on the computer, the
+Copies of this guide: `C:\Program Files\stop-internet\docs` and, if the
+installer made the Start menu folder, the Start menu ("stop-internet -
+recovery guide") on the computer, the
 [wiki](https://github.com/Morkoshka/stop-internet/wiki) for a phone.
 
 Commands are for PowerShell started as administrator (Win+X, "Terminal
@@ -30,7 +31,9 @@ Set-Alias stopinet 'C:\Program Files\stop-internet\stopinet.exe'
   Connect the VPN client, or go on below.
 - **Grey with a dash.** Protection is off, stop-internet blocks nothing.
 - **No icon.** It was closed or did not start; start it from the Start
-  menu ("stop-internet"). Protection works without it.
+  menu ("stop-internet") or with Win+R:
+  `"C:\Program Files\stop-internet\stopinet-tray.exe"`. Protection works
+  without it.
 
 ## 1. Turn protection off for a while
 
@@ -50,6 +53,8 @@ stopinet mode normal --minutes 0
 When the service does not run or does not answer, its menu cannot help.
 
 - Start menu → **stop-internet - emergency off** → "Yes" → UAC prompt.
+  Without the Start menu folder, the same with Win+R:
+  `"C:\Program Files\stop-internet\stopinet-tray.exe" --panic`.
 - Or in the terminal:
 
   ```powershell

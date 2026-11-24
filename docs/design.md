@@ -432,11 +432,13 @@ icon stay the job of `stopinet install` and `stopinet uninstall`.
   silent install (`/VERYSILENT`).
 - **Trial mode.** A task of the wizard, off by default, passes
   `--session-only`.
-- **Start menu.** The icon, "emergency off" (see
+- **Start menu.** A task of the wizard, on by default, adds a folder with
+  the icon, "emergency off" (see
   [Tray icon and named pipe](#tray-icon-and-named-pipe)) and the
-  [recovery guide](recovery.md) in the language of the wizard. The guide and
-  the example configuration are in the program folder too, readable
-  without the network.
+  [recovery guide](recovery.md) in the language of the wizard. With the
+  task off, an upgrade removes the folder of the earlier installation. The
+  guide and the example configuration are in the program folder anyway,
+  readable without the network.
 - **Uninstall.** Settings → Apps runs `stopinet uninstall` first. If it
   fails, the uninstaller stops before it deletes anything, so the programs
   that remove the filters stay. Then it asks whether to delete
