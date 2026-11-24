@@ -21,7 +21,7 @@ English · [Русский](README.ru.md)
 </div>
 
 > [!NOTE]
-> Version 0.1.0. Every part has passed the manual tests on a real machine,
+> Version 0.1.1. Every part has passed the manual tests on a real machine,
 > with Happ 4.3 on Windows 11, leak tests with traffic captures included.
 > The installer is not signed; [Getting started](#getting-started) shows
 > how to check it.

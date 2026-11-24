@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "stopinet-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "stopinet-core",
  "stopinet-icon",
@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "stopinet-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "toml",
@@ -113,11 +113,11 @@ dependencies = [
 
 [[package]]
 name = "stopinet-icon"
-version = "0.1.0"
+version = "0.1.1"
 
 [[package]]
 name = "stopinet-service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "stopinet-core",
  "stopinet-icon",
@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "stopinet-tray"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "stopinet-core",
  "stopinet-icon",
@@ -137,7 +137,7 @@ dependencies = [
 
 [[package]]
 name = "stopinet-win"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "stopinet-core",
  "windows-service",

@@ -10,6 +10,8 @@ becomes the text of its
 
 ## Unreleased
 
+## 0.1.1 - 2026-11-24
+
 ### Added
 
 - The shield as the icon of the programs and the installer. The programs
