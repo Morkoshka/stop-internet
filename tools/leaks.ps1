@@ -573,6 +573,10 @@ function Add-FlowPrograms($Flows, $Exact, $Guesses) {
     }
 }
 
+# Program names in any letter case: events write paths in lowercase,
+# processes keep the case of their files.
+$nameOrder = [StringComparer]::OrdinalIgnoreCase
+
 # Names from connection events plainly, guesses in brackets.
 function Format-Programs($Exact, $Guesses) {
     $names = @($Exact) + @($Guesses | Where-Object { -not $Exact.Contains($_) } | ForEach-Object { "[$_]" })
@@ -593,8 +597,8 @@ function Group-Flows($Flows) {
                 Port     = $port
                 Out      = [long]0
                 In       = [long]0
-                Programs = New-Object 'System.Collections.Generic.SortedSet[string]'
-                Guesses  = New-Object 'System.Collections.Generic.SortedSet[string]'
+                Programs = New-Object 'System.Collections.Generic.SortedSet[string]' $nameOrder
+                Guesses  = New-Object 'System.Collections.Generic.SortedSet[string]' $nameOrder
             }
         }
         $group = $groups[$key]
@@ -616,8 +620,8 @@ function Get-ForeignRows($Flows) {
         Group-Object Local, Protocol, Remote |
         ForEach-Object {
             $first = $_.Group[0]
-            $exact = New-Object 'System.Collections.Generic.SortedSet[string]'
-            $guesses = New-Object 'System.Collections.Generic.SortedSet[string]'
+            $exact = New-Object 'System.Collections.Generic.SortedSet[string]' $nameOrder
+            $guesses = New-Object 'System.Collections.Generic.SortedSet[string]' $nameOrder
             Add-FlowPrograms $_.Group $exact $guesses
             [pscustomobject]@{
                 Source   = Get-IpLabel $first.Local
