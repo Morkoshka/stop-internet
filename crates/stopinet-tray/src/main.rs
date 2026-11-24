@@ -11,7 +11,9 @@
 //!   "normal internet" the tray starts itself again with administrator
 //!   rights through a UAC prompt, as `stopinet-tray.exe --normal <minutes>`;
 //!   that instance only sends the request and shows a message if it fails.
-//! - "Автоматически" in the menu keeps the protected mode in line with the
+//! - The menu is in Russian or English, like the display language of
+//!   Windows.
+//! - "Automatic" ("Автоматически") in the menu keeps the protected mode in line with the
 //!   system proxy of the user: proxy mode while it points to this computer,
 //!   tunnel-only mode otherwise. It is on until a protected mode is chosen
 //!   by hand, and stays so across restarts. See [`auto`].
@@ -25,6 +27,7 @@
 
 mod auto;
 mod icon;
+mod lang;
 mod place;
 mod proxy;
 mod settings;
@@ -45,6 +48,7 @@ use stopinet_core::protocol::{Request, Response};
 use stopinet_win::pipe;
 
 use crate::auto::SystemProxy;
+use crate::lang::Lang;
 use crate::shell::Notifier;
 use crate::view::{Action, Problem, View};
 
@@ -79,10 +83,11 @@ fn main() -> ExitCode {
         [] => tray(),
         [flag, minutes] if flag == NORMAL_ARG => normal(minutes),
         _ => {
-            shell::message_box(&format!(
+            let text = Lang::current().pick(
                 "Неизвестные параметры: {}.\n\nЗначок запускается без параметров.",
-                args.join(" ")
-            ));
+                "Unknown parameters: {}.\n\nThe icon starts without parameters.",
+            );
+            shell::message_box(&text.replace("{}", &args.join(" ")));
             ExitCode::FAILURE
         }
     }
@@ -113,7 +118,11 @@ fn tray() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            shell::message_box(&format!("Значок stop-internet не запустился: {error}"));
+            let text = Lang::current().pick(
+                "Значок stop-internet не запустился",
+                "The stop-internet icon did not start",
+            );
+            shell::message_box(&format!("{text}: {error}"));
             ExitCode::FAILURE
         }
     }
@@ -209,9 +218,11 @@ fn act(action: Action, shared: &Arc<Shared>, notifier: Notifier) {
             // shows the result. The tray keeps following the proxy: that
             // waits until normal internet ends.
             if let Err(error) = shell::run_elevated(&format!("{NORMAL_ARG} {minutes}")) {
-                shell::message_box(&format!(
-                    "Не удалось запросить права администратора: {error}"
-                ));
+                let text = Lang::current().pick(
+                    "Не удалось запросить права администратора",
+                    "Could not ask for administrator rights",
+                );
+                shell::message_box(&format!("{text}: {error}"));
             }
         }
         Action::Choose(choice) => {
@@ -228,8 +239,10 @@ fn act(action: Action, shared: &Arc<Shared>, notifier: Notifier) {
                 Ok(Response::Status(status)) => {
                     publish(&shared.view, View::Status(status), notifier);
                 }
-                Ok(Response::Refused(refusal)) => failed(view::refusal_text(refusal)),
-                Err(error) => failed(view::problem_text(Problem::from(&error))),
+                Ok(Response::Refused(refusal)) => {
+                    failed(view::refusal_text(refusal, Lang::current()))
+                }
+                Err(error) => failed(view::problem_text(Problem::from(&error), Lang::current())),
             }
         }
         Action::FollowProxy(on) => {
@@ -239,7 +252,9 @@ fn act(action: Action, shared: &Arc<Shared>, notifier: Notifier) {
         }
         Action::OpenLog => {
             if let Err(error) = shell::open(Path::new(LOG_PATH)) {
-                shell::message_box(&format!("Не удалось открыть журнал {LOG_PATH}: {error}"));
+                let text =
+                    Lang::current().pick("Не удалось открыть журнал", "Could not open the log");
+                shell::message_box(&format!("{text} {LOG_PATH}: {error}"));
             }
         }
         // Handled by the window.
@@ -250,34 +265,41 @@ fn act(action: Action, shared: &Arc<Shared>, notifier: Notifier) {
 /// Keeps the choice for the next start of the tray.
 fn remember(follow: bool) {
     if let Err(error) = settings::set_follow_proxy(follow) {
-        shell::message_box(&format!(
+        let text = Lang::current().pick(
             "Настройка «Автоматически» не сохранилась и после перезапуска значка \
-             будет прежней: {error}"
-        ));
+             будет прежней",
+            "The \"Automatic\" setting was not saved and will be as before after \
+             the icon restarts",
+        );
+        shell::message_box(&format!("{text}: {error}"));
     }
 }
 
 /// The elevated instance: switches to normal internet and exits.
 fn normal(minutes: &str) -> ExitCode {
     let Ok(minutes) = minutes.parse() else {
-        failed("Неверная длительность обычного интернета.");
+        failed(Lang::current().pick(
+            "Неверная длительность обычного интернета.",
+            "Wrong duration of normal internet.",
+        ));
         return ExitCode::FAILURE;
     };
     match pipe::ask(&Request::Choose(Choice::Normal { minutes })) {
         Ok(Response::Status(_)) => ExitCode::SUCCESS,
         Ok(Response::Refused(refusal)) => {
-            failed(view::refusal_text(refusal));
+            failed(view::refusal_text(refusal, Lang::current()));
             ExitCode::FAILURE
         }
         Err(error) => {
-            failed(view::problem_text(Problem::from(&error)));
+            failed(view::problem_text(Problem::from(&error), Lang::current()));
             ExitCode::FAILURE
         }
     }
 }
 
 fn failed(reason: &str) {
-    shell::message_box(&format!("Режим не переключён.\n\n{reason}"));
+    let text = Lang::current().pick("Режим не переключён.", "The mode was not switched.");
+    shell::message_box(&format!("{text}\n\n{reason}"));
 }
 
 /// The data stays usable if another thread panicked while holding the lock.

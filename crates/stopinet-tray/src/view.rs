@@ -1,25 +1,28 @@
 //! What the tray shows: the color of the icon, the tooltip and the menu, in
-//! Russian. No system calls, so all of it is covered by unit tests.
+//! Russian or English (see [`Lang`]). No system calls, so all of it is
+//! covered by unit tests.
 //!
 //! The menu:
 //!
 //! ```text
-//! Только туннель            state, two lines
-//! интернет через VPN
+//! Tunnel only                 state, two lines
+//! internet through the VPN
 //! ──────────────────
-//! ✓ Автоматически           follow the system proxy
-//! ● Только туннель          the mode, as the service reports it
-//!   Прокси
-//!   Обычный интернет  >     one item per configured duration
+//! ✓ Automatic                 follow the system proxy
+//! ● Tunnel only               the mode, as the service reports it
+//!   Proxy
+//!   Normal internet  >        one item per configured duration
 //! ──────────────────
-//!   Журнал службы
-//!   Закрыть значок
+//!   Service log
+//!   Close icon
 //! ```
 
 use stopinet_core::control::{Choice, Refusal, Remaining};
 use stopinet_core::policy::{Mode, TunnelState};
 use stopinet_core::protocol::Status;
 use stopinet_win::ClientError;
+
+use crate::lang::Lang;
 
 /// What the tray knows about the service.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,44 +124,59 @@ impl View {
     /// Two short lines about the state, for the tooltip and the top of the
     /// menu: what holds and what it means now. Short lines keep the menu
     /// narrow.
-    pub fn lines(&self) -> (&'static str, String) {
+    pub fn lines(&self, lang: Lang) -> (&'static str, String) {
         let status = match self {
             Self::Status(status) => status,
             Self::Unreachable(problem) => {
-                let (title, detail) = problem_lines(*problem);
+                let (title, detail) = problem_lines(*problem, lang);
                 return (title, detail.into());
             }
         };
-        match (status.mode, status.tunnel, status.left) {
-            (Mode::TunnelOnly, TunnelState::Up, _) => {
-                ("Только туннель", "интернет через VPN".into())
-            }
-            (Mode::TunnelOnly, TunnelState::Down, _) => {
-                ("Только туннель", "туннеля нет, интернет закрыт".into())
-            }
-            (Mode::Proxy, TunnelState::Up, _) => ("Прокси", "интернет через VPN".into()),
-            (Mode::Proxy, TunnelState::Down, _) => {
-                ("Прокси", "открыт только прокси клиента".into())
-            }
-            (Mode::Normal, _, Some(Remaining::Time(left))) => ("Защита выключена", left_text(left)),
-            (Mode::Normal, _, _) => ("Защита выключена", "до перезагрузки или сна".into()),
-        }
+        let t = |russian, english| lang.pick(russian, english);
+        let through_vpn = t("интернет через VPN", "internet through the VPN");
+        let (title, detail) = match (status.mode, status.tunnel, status.left) {
+            (Mode::TunnelOnly, TunnelState::Up, _) => (TUNNEL_ONLY, through_vpn.into()),
+            (Mode::TunnelOnly, TunnelState::Down, _) => (
+                TUNNEL_ONLY,
+                t(
+                    "туннеля нет, интернет закрыт",
+                    "no tunnel, internet blocked",
+                )
+                .into(),
+            ),
+            (Mode::Proxy, TunnelState::Up, _) => (PROXY, through_vpn.into()),
+            (Mode::Proxy, TunnelState::Down, _) => (
+                PROXY,
+                t(
+                    "открыт только прокси клиента",
+                    "only the client's proxy is open",
+                )
+                .into(),
+            ),
+            (Mode::Normal, _, Some(Remaining::Time(left))) => (OFF, left_text(left, lang)),
+            (Mode::Normal, _, _) => (
+                OFF,
+                t("до перезагрузки или сна", "until reboot or sleep").into(),
+            ),
+        };
+        (lang.pick(title.0, title.1), detail)
     }
 
     /// Tooltip of the icon.
-    pub fn tooltip(&self) -> String {
-        let (title, detail) = self.lines();
+    pub fn tooltip(&self, lang: Lang) -> String {
+        let (title, detail) = self.lines(lang);
         format!("stop-internet\n{title}\n{detail}")
     }
 
     /// The menu; `follow` says whether the mode follows the system proxy.
-    pub fn menu(&self, follow: bool) -> Vec<Entry> {
+    pub fn menu(&self, follow: bool, lang: Lang) -> Vec<Entry> {
         let (mode, durations, enabled) = match self {
             Self::Status(status) => (Some(status.mode), status.durations.as_slice(), true),
             Self::Unreachable(_) => (None, &[][..], false),
         };
-        let item = |label: &str, choice: Choice| Entry::Item {
-            label: label.into(),
+        let t = |(russian, english): (&str, &str)| String::from(lang.pick(russian, english));
+        let item = |label: (&str, &str), choice: Choice| Entry::Item {
+            label: t(label),
             action: Action::Choose(choice),
             checked: mode == Some(choice.mode()),
             enabled,
@@ -166,40 +184,40 @@ impl View {
         let normal = durations
             .iter()
             .map(|&minutes| Entry::Item {
-                label: duration_label(minutes),
+                label: duration_label(minutes, lang),
                 action: Action::Choose(Choice::Normal { minutes }),
                 checked: false,
                 enabled,
             })
             .collect::<Vec<_>>();
-        let (title, detail) = self.lines();
+        let (title, detail) = self.lines(lang);
         vec![
             Entry::Text(title.into()),
             Entry::Text(detail),
             Entry::Separator,
             Entry::Item {
-                label: "Автоматически".into(),
+                label: t(("Автоматически", "Automatic")),
                 action: Action::FollowProxy(!follow),
                 checked: follow,
                 enabled,
             },
-            item("Только туннель", Choice::TunnelOnly),
-            item("Прокси", Choice::Proxy),
+            item(TUNNEL_ONLY, Choice::TunnelOnly),
+            item(PROXY, Choice::Proxy),
             Entry::Submenu {
-                label: "Обычный интернет".into(),
+                label: t(("Обычный интернет", "Normal internet")),
                 checked: mode == Some(Mode::Normal),
                 enabled: enabled && !normal.is_empty(),
                 entries: normal,
             },
             Entry::Separator,
             Entry::Item {
-                label: "Журнал службы".into(),
+                label: t(("Журнал службы", "Service log")),
                 action: Action::OpenLog,
                 checked: false,
                 enabled: true,
             },
             Entry::Item {
-                label: "Закрыть значок".into(),
+                label: t(("Закрыть значок", "Close icon")),
                 action: Action::Close,
                 checked: false,
                 enabled: true,
@@ -208,55 +226,118 @@ impl View {
     }
 }
 
+/// Names that the state lines and the menu share, in Russian and English.
+const TUNNEL_ONLY: (&str, &str) = ("Только туннель", "Tunnel only");
+const PROXY: (&str, &str) = ("Прокси", "Proxy");
+const OFF: (&str, &str) = ("Защита выключена", "Protection off");
+
 /// The state lines when the service cannot be asked.
-fn problem_lines(problem: Problem) -> (&'static str, &'static str) {
-    match problem {
-        Problem::NotInstalled => ("Служба не установлена", "установите stop-internet"),
-        Problem::NotRunning => ("Служба остановлена", "запустится после перезагрузки"),
-        Problem::OldService => ("Служба старой версии", "установите stop-internet заново"),
-        Problem::Impostor => ("Канал службы занят", "другой программой"),
-        Problem::NoAnswer => ("Служба не отвечает", "проверка раз в секунду"),
+fn problem_lines(problem: Problem, lang: Lang) -> (&'static str, &'static str) {
+    let (russian, english) = match problem {
+        Problem::NotInstalled => (
+            ("Служба не установлена", "установите stop-internet"),
+            ("Service not installed", "install stop-internet"),
+        ),
+        Problem::NotRunning => (
+            ("Служба остановлена", "запустится после перезагрузки"),
+            ("Service stopped", "starts again after a reboot"),
+        ),
+        Problem::OldService => (
+            ("Служба старой версии", "установите stop-internet заново"),
+            ("Old service version", "install stop-internet again"),
+        ),
+        Problem::Impostor => (
+            ("Канал службы занят", "другой программой"),
+            ("Service pipe taken", "by another program"),
+        ),
+        Problem::NoAnswer => (
+            ("Служба не отвечает", "проверка раз в секунду"),
+            ("Service not answering", "checking once a second"),
+        ),
+    };
+    match lang {
+        Lang::Russian => russian,
+        Lang::English => english,
     }
 }
 
 /// A full sentence for a message box.
-pub fn problem_text(problem: Problem) -> &'static str {
-    match problem {
-        Problem::NotInstalled => "Служба stop-internet не установлена",
-        Problem::NotRunning => "Служба stop-internet остановлена",
-        Problem::OldService => "Служба stop-internet старой версии: установите её заново",
-        Problem::Impostor => "Канал службы занят другой программой",
-        Problem::NoAnswer => "Служба stop-internet не отвечает",
-    }
+pub fn problem_text(problem: Problem, lang: Lang) -> &'static str {
+    let (russian, english) = match problem {
+        Problem::NotInstalled => (
+            "Служба stop-internet не установлена",
+            "The stop-internet service is not installed",
+        ),
+        Problem::NotRunning => (
+            "Служба stop-internet остановлена",
+            "The stop-internet service is stopped",
+        ),
+        Problem::OldService => (
+            "Служба stop-internet старой версии: установите её заново",
+            "The stop-internet service is an older version: install it again",
+        ),
+        Problem::Impostor => (
+            "Канал службы занят другой программой",
+            "The pipe of the service is taken by another program",
+        ),
+        Problem::NoAnswer => (
+            "Служба stop-internet не отвечает",
+            "The stop-internet service does not answer",
+        ),
+    };
+    lang.pick(russian, english)
 }
 
-pub fn refusal_text(refusal: Refusal) -> &'static str {
-    match refusal {
-        Refusal::NotElevated => "Для обычного интернета нужны права администратора.",
-        Refusal::BadRequest => "Служба не приняла запрос.",
-        Refusal::Unavailable => "Служба не ответила вовремя, попробуйте ещё раз.",
-    }
+pub fn refusal_text(refusal: Refusal, lang: Lang) -> &'static str {
+    let (russian, english) = match refusal {
+        Refusal::NotElevated => (
+            "Для обычного интернета нужны права администратора.",
+            "Normal internet needs administrator rights.",
+        ),
+        Refusal::BadRequest => (
+            "Служба не приняла запрос.",
+            "The service did not accept the request.",
+        ),
+        Refusal::Unavailable => (
+            "Служба не ответила вовремя, попробуйте ещё раз.",
+            "The service did not answer in time, try again.",
+        ),
+    };
+    lang.pick(russian, english)
 }
 
-/// "На 15 минут", "На 1 час", "До перезагрузки или сна".
-pub fn duration_label(minutes: u32) -> String {
-    match minutes {
-        0 => "До перезагрузки или сна".into(),
-        m if m % 60 == 0 => {
+/// "На 15 минут", "На 1 час", "До перезагрузки или сна"; "For 15 minutes",
+/// "For 1 hour", "Until reboot or sleep".
+pub fn duration_label(minutes: u32, lang: Lang) -> String {
+    match (lang, minutes) {
+        (Lang::Russian, 0) => "До перезагрузки или сна".into(),
+        (Lang::English, 0) => "Until reboot or sleep".into(),
+        (Lang::Russian, m) if m % 60 == 0 => {
             let hours = m / 60;
             format!("На {hours} {}", plural(hours, "час", "часа", "часов"))
         }
-        m => format!("На {m} {}", plural(m, "минуту", "минуты", "минут")),
+        (Lang::Russian, m) => format!("На {m} {}", plural(m, "минуту", "минуты", "минут")),
+        (Lang::English, m) if m % 60 == 0 => {
+            let hours = m / 60;
+            format!("For {hours} hour{}", if hours == 1 { "" } else { "s" })
+        }
+        (Lang::English, m) => format!("For {m} minute{}", if m == 1 { "" } else { "s" }),
     }
 }
 
-/// "ещё 14 мин", "ещё 1 ч 5 мин", rounded up to a whole minute.
-fn left_text(left: std::time::Duration) -> String {
+/// "ещё 14 мин", "ещё 1 ч 5 мин"; "14 min left", "1 h 5 min left";
+/// rounded up to a whole minute.
+fn left_text(left: std::time::Duration, lang: Lang) -> String {
     let minutes = left.as_secs().div_ceil(60);
-    match (minutes / 60, minutes % 60) {
-        (0, m) => format!("ещё {m} мин"),
-        (h, 0) => format!("ещё {h} ч"),
-        (h, m) => format!("ещё {h} ч {m} мин"),
+    let (h_unit, m_unit) = (lang.pick("ч", "h"), lang.pick("мин", "min"));
+    let time = match (minutes / 60, minutes % 60) {
+        (0, m) => format!("{m} {m_unit}"),
+        (h, 0) => format!("{h} {h_unit}"),
+        (h, m) => format!("{h} {h_unit} {m} {m_unit}"),
+    };
+    match lang {
+        Lang::Russian => format!("ещё {time}"),
+        Lang::English => format!("{time} left"),
     }
 }
 
@@ -275,6 +356,9 @@ mod tests {
 
     use super::*;
 
+    const LANGS: [Lang; 2] = [Lang::Russian, Lang::English];
+    use Lang::{English, Russian};
+
     fn status(mode: Mode, tunnel: TunnelState, left: Option<Remaining>) -> View {
         View::Status(Status {
             mode,
@@ -282,6 +366,35 @@ mod tests {
             left,
             durations: vec![15, 60, 0],
         })
+    }
+
+    fn every_view() -> Vec<View> {
+        let mut views = Vec::new();
+        for mode in [Mode::TunnelOnly, Mode::Proxy] {
+            for tunnel in [TunnelState::Up, TunnelState::Down] {
+                views.push(status(mode, tunnel, None));
+            }
+        }
+        views.push(status(
+            Mode::Normal,
+            TunnelState::Down,
+            Some(Remaining::UntilReset),
+        ));
+        views.push(status(
+            Mode::Normal,
+            TunnelState::Down,
+            Some(Remaining::Time(Duration::from_secs(1439 * 60 + 1))),
+        ));
+        for problem in [
+            Problem::NotInstalled,
+            Problem::NotRunning,
+            Problem::OldService,
+            Problem::Impostor,
+            Problem::NoAnswer,
+        ] {
+            views.push(View::Unreachable(problem));
+        }
+        views
     }
 
     #[test]
@@ -306,58 +419,91 @@ mod tests {
             TunnelState::Up,
             Some(Remaining::Time(Duration::from_secs(13 * 60 + 1))),
         );
-        assert_eq!(view.lines(), ("Защита выключена", "ещё 14 мин".into()));
         assert_eq!(
-            view.tooltip(),
+            view.lines(Russian),
+            ("Защита выключена", "ещё 14 мин".into())
+        );
+        assert_eq!(
+            view.tooltip(Russian),
             "stop-internet\nЗащита выключена\nещё 14 мин"
+        );
+        assert_eq!(
+            view.lines(English),
+            ("Protection off", "14 min left".into())
         );
     }
 
     #[test]
     fn state_lines_are_short_to_keep_the_menu_narrow() {
-        let mut views = Vec::new();
-        for mode in [Mode::TunnelOnly, Mode::Proxy] {
-            for tunnel in [TunnelState::Up, TunnelState::Down] {
-                views.push(status(mode, tunnel, None));
+        for lang in LANGS {
+            for view in every_view() {
+                let (title, detail) = view.lines(lang);
+                assert!(title.chars().count() <= 32, "{title}");
+                assert!(detail.chars().count() <= 32, "{detail}");
             }
-        }
-        views.push(status(
-            Mode::Normal,
-            TunnelState::Down,
-            Some(Remaining::UntilReset),
-        ));
-        views.push(status(
-            Mode::Normal,
-            TunnelState::Down,
-            Some(Remaining::Time(Duration::from_secs(1440 * 60))),
-        ));
-        for problem in [
-            Problem::NotInstalled,
-            Problem::NotRunning,
-            Problem::OldService,
-            Problem::Impostor,
-            Problem::NoAnswer,
-        ] {
-            views.push(View::Unreachable(problem));
-        }
-        for view in views {
-            let (title, detail) = view.lines();
-            assert!(title.chars().count() <= 32, "{title}");
-            assert!(detail.chars().count() <= 32, "{detail}");
         }
     }
 
     #[test]
     fn tooltip_fits_the_notification_area() {
-        let views = [
-            status(Mode::TunnelOnly, TunnelState::Down, None),
-            status(Mode::Proxy, TunnelState::Down, None),
-            status(Mode::Normal, TunnelState::Down, Some(Remaining::UntilReset)),
-            View::Unreachable(Problem::OldService),
-        ];
-        for view in views {
-            // szTip holds 128 UTF-16 units with the final NUL.
-            assert!(view.tooltip().encode_utf16().count() < 128, "{view:?}");
+        for lang in LANGS {
+            for view in every_view() {
+                // szTip holds 128 UTF-16 units with the final NUL.
+                assert!(view.tooltip(lang).encode_utf16().count() < 128, "{view:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_language_has_its_own_words() {
+        for view in every_view() {
+            assert_ne!(view.lines(Russian), view.lines(English), "{view:?}");
+            let (title, detail) = view.lines(English);
+            assert!(title.is_ascii() && detail.is_ascii(), "{view:?}");
+        }
+        let labels = |lang| -> Vec<String> {
+            status(Mode::TunnelOnly, TunnelState::Up, None)
+                .menu(true, lang)
+                .into_iter()
+                .filter_map(|entry| match entry {
+                    Entry::Item { label, .. } | Entry::Submenu { label, .. } => Some(label),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(
+            labels(English),
+            [
+                "Automatic",
+                "Tunnel only",
+                "Proxy",
+                "Normal internet",
+                "Service log",
+                "Close icon"
+            ]
+        );
+        assert_eq!(
+            labels(Russian),
+            [
+                "Автоматически",
+                "Только туннель",
+                "Прокси",
+                "Обычный интернет",
+                "Журнал службы",
+                "Закрыть значок"
+            ]
+        );
+        for problem in [Problem::NotInstalled, Problem::Impostor] {
+            assert!(problem_text(problem, English).is_ascii());
+            assert!(!problem_text(problem, Russian).is_ascii());
+        }
+        for refusal in [
+            Refusal::NotElevated,
+            Refusal::BadRequest,
+            Refusal::Unavailable,
+        ] {
+            assert!(refusal_text(refusal, English).is_ascii());
+            assert!(!refusal_text(refusal, Russian).is_ascii());
         }
     }
 
@@ -386,7 +532,7 @@ mod tests {
 
     #[test]
     fn menu_marks_the_mode_and_offers_the_configured_durations() {
-        let menu = status(Mode::Proxy, TunnelState::Up, None).menu(false);
+        let menu = status(Mode::Proxy, TunnelState::Up, None).menu(false, Russian);
         assert_eq!(checked(&menu), ["Прокси"]);
 
         let normal = menu
@@ -416,17 +562,17 @@ mod tests {
     #[test]
     fn the_automatic_choice_is_a_check_mark_that_toggles() {
         let view = status(Mode::TunnelOnly, TunnelState::Up, None);
-        let on = view.menu(true);
+        let on = view.menu(true, Russian);
         assert_eq!(checked(&on), ["Автоматически", "Только туннель"]);
         assert_eq!(follow_action(&on), Some(Action::FollowProxy(false)));
-        let off = view.menu(false);
-        assert_eq!(checked(&off), ["Только туннель"]);
+        let off = view.menu(false, English);
+        assert_eq!(checked(&off), ["Tunnel only"]);
         assert_eq!(follow_action(&off), Some(Action::FollowProxy(true)));
     }
 
     #[test]
     fn without_the_service_only_the_log_and_close_work() {
-        let menu = View::Unreachable(Problem::NotRunning).menu(true);
+        let menu = View::Unreachable(Problem::NotRunning).menu(true, Russian);
         for entry in &menu {
             match entry {
                 Entry::Item {
@@ -447,24 +593,38 @@ mod tests {
 
     #[test]
     fn durations_read_naturally() {
-        assert_eq!(duration_label(15), "На 15 минут");
-        assert_eq!(duration_label(1), "На 1 минуту");
-        assert_eq!(duration_label(2), "На 2 минуты");
-        assert_eq!(duration_label(11), "На 11 минут");
-        assert_eq!(duration_label(21), "На 21 минуту");
-        assert_eq!(duration_label(90), "На 90 минут");
-        assert_eq!(duration_label(60), "На 1 час");
-        assert_eq!(duration_label(120), "На 2 часа");
-        assert_eq!(duration_label(300), "На 5 часов");
-        assert_eq!(duration_label(1440), "На 24 часа");
-        assert_eq!(duration_label(0), "До перезагрузки или сна");
+        let ru = |minutes| duration_label(minutes, Russian);
+        assert_eq!(ru(15), "На 15 минут");
+        assert_eq!(ru(1), "На 1 минуту");
+        assert_eq!(ru(2), "На 2 минуты");
+        assert_eq!(ru(11), "На 11 минут");
+        assert_eq!(ru(21), "На 21 минуту");
+        assert_eq!(ru(90), "На 90 минут");
+        assert_eq!(ru(60), "На 1 час");
+        assert_eq!(ru(120), "На 2 часа");
+        assert_eq!(ru(300), "На 5 часов");
+        assert_eq!(ru(1440), "На 24 часа");
+        assert_eq!(ru(0), "До перезагрузки или сна");
+
+        let en = |minutes| duration_label(minutes, English);
+        assert_eq!(en(15), "For 15 minutes");
+        assert_eq!(en(1), "For 1 minute");
+        assert_eq!(en(90), "For 90 minutes");
+        assert_eq!(en(60), "For 1 hour");
+        assert_eq!(en(120), "For 2 hours");
+        assert_eq!(en(0), "Until reboot or sleep");
     }
 
     #[test]
     fn time_left_is_rounded_up() {
-        assert_eq!(left_text(Duration::from_secs(1)), "ещё 1 мин");
-        assert_eq!(left_text(Duration::from_secs(60)), "ещё 1 мин");
-        assert_eq!(left_text(Duration::from_secs(3600)), "ещё 1 ч");
-        assert_eq!(left_text(Duration::from_secs(3601)), "ещё 1 ч 1 мин");
+        let ru = |seconds| left_text(Duration::from_secs(seconds), Russian);
+        assert_eq!(ru(1), "ещё 1 мин");
+        assert_eq!(ru(60), "ещё 1 мин");
+        assert_eq!(ru(3600), "ещё 1 ч");
+        assert_eq!(ru(3601), "ещё 1 ч 1 мин");
+        let en = |seconds| left_text(Duration::from_secs(seconds), English);
+        assert_eq!(en(1), "1 min left");
+        assert_eq!(en(3600), "1 h left");
+        assert_eq!(en(3601), "1 h 1 min left");
     }
 }

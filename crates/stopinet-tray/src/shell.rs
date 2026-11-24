@@ -55,6 +55,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WM_CONTEXTMENU, WM_DESTROY, WM_NULL, WM_SETTINGCHANGE, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
+use crate::lang::Lang;
 use crate::place::{self, Edge, Placement, Rect};
 use crate::view::{Action, Color, Entry, View};
 use crate::{icon, theme};
@@ -335,7 +336,7 @@ impl App {
             data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
             data.uCallbackMessage = WM_TRAY;
             data.hIcon = self.icons.get(self.shown.color());
-            let tip: Vec<u16> = self.shown.tooltip().encode_utf16().collect();
+            let tip: Vec<u16> = self.shown.tooltip(Lang::current()).encode_utf16().collect();
             let length = tip.len().min(data.szTip.len() - 1);
             data.szTip[..length].copy_from_slice(&tip[..length]);
         }
@@ -370,7 +371,7 @@ fn show_menu(window: HWND) {
         return;
     };
     let mut actions = Vec::new();
-    let Some(menu) = Menu::build(&view.menu(follow), &mut actions) else {
+    let Some(menu) = Menu::build(&view.menu(follow, Lang::current()), &mut actions) else {
         return;
     };
     let placement = menu_placement(window);
@@ -780,7 +781,7 @@ mod tests {
             durations: vec![15, 60, 0],
         });
         let mut actions = Vec::new();
-        assert!(Menu::build(&view.menu(true), &mut actions).is_some());
+        assert!(Menu::build(&view.menu(true, Lang::English), &mut actions).is_some());
         // The automatic choice, two modes, three durations, the log and
         // close.
         assert_eq!(actions.len(), 8);
@@ -789,7 +790,7 @@ mod tests {
 
         let mut actions = Vec::new();
         let view = View::Unreachable(Problem::NotRunning);
-        assert!(Menu::build(&view.menu(false), &mut actions).is_some());
+        assert!(Menu::build(&view.menu(false, Lang::English), &mut actions).is_some());
         assert_eq!(actions.len(), 5);
     }
 }
