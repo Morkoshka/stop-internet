@@ -1,6 +1,12 @@
-//! Pixels of the status icons, drawn in code so that the repository holds
+//! The shield of stop-internet, drawn in code so that the repository holds
 //! no binary images: a shield in the color of the state with a darker rim
 //! and a white sign, smoothed at the edges, on a transparent background.
+//!
+//! - [`draw`] gives the pixels, for the status icon of the tray.
+//! - [`ico`] gives an `.ico` file, for the installer.
+//! - [`embed`], called from the build script of a program, puts the green
+//!   shield and the version into the program as Windows resources, for
+//!   Explorer and Task Manager.
 //!
 //! The shape and the sign tell the states apart even where colors do not,
 //! for example next to the round voice indicator of a chat program:
@@ -11,9 +17,28 @@
 //! builds them from the constants here and fails when they differ; running
 //! the tests with `STOPINET_UPDATE_PICTURES=1` writes them anew.
 
+#![forbid(unsafe_code)]
+
+mod ico;
+mod png;
+mod resource;
+
 use std::f32::consts::FRAC_PI_2;
 
-use crate::view::Color;
+pub use ico::ico;
+pub use resource::embed;
+
+/// Color of the icon, after the state of the protection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Color {
+    /// Protected, and the internet works through the VPN client.
+    Green,
+    /// Blocked: the tunnel is down in tunnel-only mode, or the service
+    /// cannot be asked.
+    Red,
+    /// Protection is off.
+    Grey,
+}
 
 impl Color {
     /// Red, green and blue.

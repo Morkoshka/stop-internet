@@ -243,6 +243,7 @@ stopinet uninstall                   # без установщика; конфи
 | `crates/stopinet-service` | служба Windows |
 | `crates/stopinet-tray` | значок в трее |
 | `crates/stopinet-cli` | утилита командной строки `stopinet` |
+| `crates/stopinet-icon` | щит: значок в трее, значок и версия программ и установщика; без unsafe-кода |
 | `installer/` | скрипт установщика для Inno Setup |
 | `config/` | пример конфигурации |
 | `docs/` | архитектура, ручные тесты, восстановление, картинки |

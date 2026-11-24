@@ -29,7 +29,6 @@
 
 mod auto;
 mod emergency;
-mod icon;
 mod lang;
 mod place;
 mod proxy;

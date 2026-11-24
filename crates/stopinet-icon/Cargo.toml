@@ -1,0 +1,12 @@
+[package]
+name = "stopinet-icon"
+description = "Shield icon of stop-internet: the pixels of the tray icon, the .ico file of the installer, the icon and version resources of the programs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

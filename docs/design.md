@@ -358,9 +358,9 @@ administrator rights:
   first, because a running program cannot be replaced or deleted.
 - One icon per session (a mutex in the `Local\` namespace). The icon comes
   back when Explorer restarts (`TaskbarCreated`). The icons are drawn in
-  code. `docs/images` has SVG copies for the documentation, and a unit
-  test checks that they match the shape, the colors and the signs of the
-  code.
+  code (`stopinet-icon`). `docs/images` has SVG copies for the
+  documentation, and a unit test checks that they match the shape, the
+  colors and the signs of the code.
 
 ## Excluded apps when the tunnel drops
 
@@ -396,6 +396,7 @@ Limits:
 | `stopinet-service` | LocalSystem service | WFP filters, tunnel, power and logon events, named pipe server |
 | `stopinet-tray` | user session | status icon, menu in Russian or English, mode switching, following the system proxy; its window and registry code is its own unsafe code |
 | `stopinet` | CLI | policy dry run, trial, install, uninstall, panic, status, mode |
+| `stopinet-icon` | library | the shield: pixels of the tray icon, the `.ico` of the installer, the icon and version resources of the programs; no unsafe code |
 | `installer/` | Inno Setup | wizard, entry in Settings → Apps, Start menu shortcuts; wraps `stopinet install` and `uninstall`, see [Installer](#installer) |
 
 - The tray and the CLI talk to the service over a named pipe. Its security
@@ -412,6 +413,14 @@ Limits:
 - The service log, `%ProgramData%\stop-internet\service.log`, records events
   (start, stop, mode changes, tunnel up and down, errors), never remote
   addresses. Over 1 MiB it starts over and keeps one previous file.
+- The programs carry the green shield and their version. The build script
+  of each one draws the shield in sizes from 16 to 256 pixels and writes
+  it, with the version from `Cargo.toml` and a name for Task Manager
+  ("stop-internet", "stop-internet service", "stop-internet command-line
+  tool"), into a `.res` file that the linker adds to the program, without
+  the resource compiler of the Windows SDK. The installer gets the same
+  shield as an `.ico` file, and Settings → Apps shows the icon of
+  `stopinet-tray.exe`.
 
 ## Installer
 

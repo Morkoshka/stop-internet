@@ -3,8 +3,9 @@
 Builds the installer: target\installer\stop-internet-<version>-setup.exe.
 
 .DESCRIPTION
-Builds the release programs with cargo, then compiles installer\stop-internet.iss
-with Inno Setup 6.4 or later. The version comes from Cargo.toml.
+Builds the release programs with cargo, writes the icon of Setup to
+target\icon\stop-internet.ico, then compiles installer\stop-internet.iss with
+Inno Setup 6.4 or later. The version comes from Cargo.toml.
 
 It writes only into target\ and changes nothing on the system. ISCC.exe is
 taken from PATH, from $env:ISCC or from the usual install folders of
@@ -54,6 +55,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed.' }
     $version = ($metadata.packages | Where-Object { $_.name -eq 'stopinet-cli' }).version
     if (-not $version) { throw 'No version of stopinet-cli in cargo metadata.' }
+
+    # The icon of Setup, where installer\stop-internet.iss expects it.
+    New-Item -ItemType Directory -Force -Path 'target\icon' | Out-Null
+    cargo run --quiet --release -p stopinet-icon --example ico -- 'target\icon\stop-internet.ico'
+    if ($LASTEXITCODE -ne 0) { throw 'Writing the icon failed.' }
 
     $iscc = Find-Iscc
     & $iscc /Q "/DAppVersion=$version" 'installer\stop-internet.iss'

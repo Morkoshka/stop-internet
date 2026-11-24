@@ -16,7 +16,8 @@
 ; - Uninstall: {app}\stopinet.exe uninstall runs first. If it fails, the
 ;   uninstallation stops, so that the programs that remove the filters stay.
 ;
-; Build with tools/build-installer.ps1, which passes the version.
+; Build with tools/build-installer.ps1, which passes the version and writes the
+; icon of Setup first.
 
 #if Ver < EncodeVer(6, 4, 0)
   #error Inno Setup 6.4 or later is needed (ExecAndCaptureOutput).
@@ -26,6 +27,10 @@
 #endif
 #ifndef Bin
   #define Bin "..\target\release"
+#endif
+; The green shield of the programs, drawn by crates/stopinet-icon.
+#ifndef Icon
+  #define Icon "..\target\icon\stop-internet.ico"
 #endif
 
 ; Must match INSTALL_DIR in crates/stopinet-cli/src/manage.rs and DATA_DIR in
@@ -43,6 +48,8 @@ AppPublisher=Morkoshka
 AppPublisherURL=https://github.com/Morkoshka/stop-internet
 AppSupportURL=https://github.com/Morkoshka/stop-internet/issues
 AppUpdatesURL=https://github.com/Morkoshka/stop-internet/releases
+; As in LICENSE and in the programs (crates/stopinet-icon/src/resource.rs).
+AppCopyright=Copyright (c) 2026 Morkoshka
 VersionInfoVersion={#AppVersion}
 DefaultDirName={#InstallDir}
 DisableDirPage=yes
@@ -60,7 +67,9 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 SetupLogging=yes
+SetupIconFile={#Icon}
 UninstallDisplayName=stop-internet
+UninstallDisplayIcon={app}\stopinet-tray.exe
 
 [Languages]
 Name: "en"; MessagesFile: "compiler:Default.isl"

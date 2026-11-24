@@ -59,16 +59,7 @@ impl From<&ClientError> for Problem {
 }
 
 /// Color of the icon.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Color {
-    /// Protected, and the internet works through the VPN client.
-    Green,
-    /// Blocked: the tunnel is down in tunnel-only mode, or the service
-    /// cannot be asked.
-    Red,
-    /// Protection is off.
-    Grey,
-}
+pub use stopinet_icon::Color;
 
 /// What a menu item does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

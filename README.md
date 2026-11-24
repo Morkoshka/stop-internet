@@ -244,6 +244,7 @@ mode back to the one that fits the system proxy.
 | `crates/stopinet-service` | Windows service |
 | `crates/stopinet-tray` | tray icon |
 | `crates/stopinet-cli` | `stopinet` command-line tool |
+| `crates/stopinet-icon` | the shield: tray icon, icon and version of the programs and the installer; no unsafe code |
 | `installer/` | Inno Setup script of the installer |
 | `config/` | example configuration |
 | `docs/` | design, manual tests, recovery guide, pictures |

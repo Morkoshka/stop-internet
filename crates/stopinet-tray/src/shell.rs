@@ -58,8 +58,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 
 use crate::lang::Lang;
 use crate::place::{self, Edge, Placement, Rect};
+use crate::theme;
 use crate::view::{Action, Color, Entry, View};
-use crate::{icon, theme};
 
 /// Callback message of the notification area icon.
 const WM_TRAY: u32 = WM_APP + 1;
@@ -569,7 +569,7 @@ struct Icons([HICON; 3]);
 
 impl Icons {
     fn create(size: i32) -> Result<Self, Win32Error> {
-        let make = |color| make_icon(size, &icon::draw(size as u32, color));
+        let make = |color| make_icon(size, &stopinet_icon::draw(size as u32, color));
         Ok(Self([
             make(Color::Green)?,
             make(Color::Red)?,

@@ -13,5 +13,8 @@ stopinet-core.workspace = true
 stopinet-win.workspace = true
 windows-service.workspace = true
 
+[build-dependencies]
+stopinet-icon.workspace = true
+
 [lints]
 workspace = true

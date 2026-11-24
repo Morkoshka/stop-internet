@@ -98,6 +98,7 @@ name = "stopinet-cli"
 version = "0.1.0"
 dependencies = [
  "stopinet-core",
+ "stopinet-icon",
  "stopinet-win",
  "windows-service",
 ]
@@ -111,10 +112,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stopinet-icon"
+version = "0.1.0"
+
+[[package]]
 name = "stopinet-service"
 version = "0.1.0"
 dependencies = [
  "stopinet-core",
+ "stopinet-icon",
  "stopinet-win",
  "windows-service",
 ]
@@ -124,6 +130,7 @@ name = "stopinet-tray"
 version = "0.1.0"
 dependencies = [
  "stopinet-core",
+ "stopinet-icon",
  "stopinet-win",
  "windows-sys",
 ]

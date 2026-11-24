@@ -13,6 +13,7 @@ repository = "https://github.com/Morkoshka/stop-internet"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 stopinet-core = { path = "crates/stopinet-core" }
+stopinet-icon = { path = "crates/stopinet-icon" }
 stopinet-win = { path = "crates/stopinet-win" }
 windows-service = "0.8"
 windows-sys = { version = "0.61", features = [

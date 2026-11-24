@@ -10,6 +10,12 @@ becomes the text of its
 
 ## Unreleased
 
+### Added
+
+- The shield as the icon of the programs and the installer. The programs
+  also show their name and version in the file properties and in Task
+  Manager.
+
 ## 0.1.0 - 2026-11-24
 
 The first release.
