@@ -131,7 +131,7 @@ in Explorer.
 
 | # | Do | Expect |
 |---|---|---|
-| E1 | `.\tools\build-installer.ps1` | "Built target\installer\stop-internet-0.1.0-setup.exe". |
+| E1 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build-installer.ps1` | "Built target\installer\stop-internet-0.1.0-setup.exe". |
 | E2 | `.\target\installer\stop-internet-0.1.0-setup.exe`; UAC: Yes (unknown publisher); keep "Trial mode" off; Install | The wizard speaks the display language of Windows. "Ready to Install" shows "Configuration: keep C:\ProgramData\stop-internet\config.toml". A few seconds of "Preparing to Install": the icon disappears and comes back. `stopinet status`: running, persistent, the same filters as before; the log shows a stop and a new start; the configuration is unchanged. Changes: Start menu folder "stop-internet" with three shortcuts, "stop-internet" in Settings, Apps, `docs\`, `config.example.toml`, `LICENSE.txt` and `unins000.*` in `C:\Program Files\stop-internet`. Undo: E9. |
 | E3 | Start menu: "stop-internet - recovery guide"; then "stop-internet" | The guide opens in Notepad, in the language of the wizard. The second shortcut adds no second icon. |
 | E4 | Run the installer again | As in E2: an upgrade over itself. Settings, Apps still lists stop-internet once. |

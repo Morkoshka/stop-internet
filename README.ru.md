@@ -138,8 +138,12 @@ MSVC, [Inno Setup](https://jrsoftware.org/isinfo.php) 6.4 или новее дл
 4. Собрать установщик:
 
    ```powershell
-   .\tools\build-installer.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build-installer.ps1
    ```
+
+   `-ExecutionPolicy Bypass` разрешает запустить этот сценарий там, где
+   Windows по умолчанию запрещает сценарии; системная настройка не
+   меняется.
 
    Он появится в `target\installer\stop-internet-<версия>-setup.exe`.
    Запустить его со своей конфигурацией, указав полный путь к ней:

@@ -142,8 +142,11 @@ installs.
 4. Build the installer:
 
    ```powershell
-   .\tools\build-installer.ps1
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build-installer.ps1
    ```
+
+   `-ExecutionPolicy Bypass` lets this one script run where Windows blocks
+   scripts by default; the setting of the system stays as it is.
 
    It writes `target\installer\stop-internet-<version>-setup.exe`. Run it
    with your configuration, given by its full path:

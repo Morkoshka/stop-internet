@@ -13,6 +13,11 @@ Inno Setup 6 (winget installs it for the user or for the machine).
 .PARAMETER SkipBuild
 Use the programs already in target\release, for example in CI after
 `cargo build --release`.
+
+.EXAMPLE
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build-installer.ps1
+
+Windows blocks scripts by default; Bypass lifts that for this run only.
 #>
 param(
     [switch]$SkipBuild

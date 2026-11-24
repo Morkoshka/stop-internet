@@ -130,7 +130,7 @@ Windows. Для каждого шага сказано, что он меняет
 
 | # | Что сделать | Чего ожидать |
 |---|---|---|
-| E1 | `.\tools\build-installer.ps1` | «Built target\installer\stop-internet-0.1.0-setup.exe». |
+| E1 | `powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build-installer.ps1` | «Built target\installer\stop-internet-0.1.0-setup.exe». |
 | E2 | `.\target\installer\stop-internet-0.1.0-setup.exe`; UAC: «Да» (неизвестный издатель); «Пробный режим» не включать; «Установить» | Мастер говорит на языке интерфейса Windows. На странице «Всё готово к установке» — «Конфигурация: оставить C:\ProgramData\stop-internet\config.toml». Несколько секунд «Подготовка к установке»: значок исчезает и появляется снова. `stopinet status`: running, persistent, те же фильтры, что и до установки; в журнале остановка и новый запуск; конфигурация не изменилась. Изменения: в меню «Пуск» папка «stop-internet» с тремя ярлыками, «stop-internet» в «Параметры → Приложения», в `C:\Program Files\stop-internet` — `docs\`, `config.example.toml`, `LICENSE.txt` и `unins000.*`. Откат: E9. |
 | E3 | Меню «Пуск»: «stop-internet — инструкция по восстановлению»; затем «stop-internet» | Инструкция открывается в Блокноте, на языке мастера. Второй ярлык не добавляет второй значок. |
 | E4 | Запустить установщик ещё раз | Как в E2: обновление поверх себя. В «Приложениях» stop-internet по-прежнему один. |
