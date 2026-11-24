@@ -291,11 +291,12 @@ administrator rights:
   one with a dash. When the service cannot be asked, the icon is red and the
   tooltip says why: not installed, stopped, an older version without the
   pipe, or the pipe held by another program.
-- The menu, in Russian, shows the state on two short lines, switches
+- The menu, in Russian or English like the display language of Windows
+  (`GetUserDefaultUILanguage`), shows the state on two short lines, switches
   between "tunnel only" and proxy mode directly, offers "normal internet"
   for each duration of the configuration, opens the service log and closes
   the icon. Closing the icon does not change the protection.
-- "Автоматически" in the menu, on by default, keeps the protected mode in
+- "Automatic" in the menu, on by default, keeps the protected mode in
   line with the system proxy of the user. While the manual proxy or the
   proxy script of Windows points to a loopback address, the VPN client runs
   in system proxy mode and the tray asks for proxy mode; otherwise it asks
@@ -380,7 +381,7 @@ Limits:
 | `stopinet-core` | library | configuration, policy model, mode selection with its timer, pipe protocol; no unsafe code, no system calls |
 | `stopinet-win` | library | WFP engine, persistent baseline, adapter lookup and notifications, named pipe, tray autostart; all unsafe code of the service and the CLI |
 | `stopinet-service` | LocalSystem service | WFP filters, tunnel, power and logon events, named pipe server |
-| `stopinet-tray` | user session | status icon, menu in Russian, mode switching, following the system proxy; its window and registry code is its own unsafe code |
+| `stopinet-tray` | user session | status icon, menu in Russian or English, mode switching, following the system proxy; its window and registry code is its own unsafe code |
 | `stopinet` | CLI | policy dry run, trial, install, uninstall, panic, status, mode |
 
 - The tray and the CLI talk to the service over a named pipe. Its security

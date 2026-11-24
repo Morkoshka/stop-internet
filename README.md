@@ -72,19 +72,19 @@ blocked (no tunnel, or the service is not running) and grey while
 protection is off. The signs differ too, so the states can be told apart
 without colors.
 
-The menu is in Russian:
+The tray menu speaks the display language of Windows, Russian or English:
 
 ```text
-Только туннель                 tunnel only,
-интернет через VPN             the internet goes through the VPN
+Tunnel only
+internet through the VPN
 ──────────────────────
-✓ Автоматически                pick the mode by the system proxy
-● Только туннель               tunnel only
-  Прокси                       proxy
-  Обычный интернет  ›          normal internet: 15 min, 1 h, until reboot
+✓ Automatic                    pick the mode by the system proxy
+● Tunnel only
+  Proxy
+  Normal internet  ›           for 15 minutes, 1 hour, until reboot
 ──────────────────────
-  Журнал службы                service log
-  Закрыть значок               close the icon
+  Service log
+  Close icon
 ```
 
 ## How it works
@@ -166,7 +166,7 @@ stopinet mode normal --minutes 15    # elevated terminal only
 stopinet uninstall                   # configuration and log stay
 ```
 
-While "Автоматически" is on in the tray menu, the tray sets the protected
+While "Automatic" is on in the tray menu, the tray sets the protected
 mode back to the one that fits the system proxy.
 
 ## Documentation

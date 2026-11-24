@@ -36,6 +36,9 @@ checklist with traffic captures comes with step 7.
   It stops the service and removes every filter of stop-internet,
   persistent ones included. `.\target\release\stopinet.exe panic` does the
   same.
+- The tray speaks the display language of Windows: Russian on a Russian
+  Windows, English otherwise. The steps quote the English texts; the
+  [Russian checklist](testing.ru.md) quotes the Russian ones.
 - What to look at:
   - `stopinet status`: service state, mode, objects of stop-internet in the
     Base Filtering Engine, tunnel state. Changes nothing.
@@ -80,38 +83,38 @@ elevated; they say so.
 | # | Do | Expect |
 |---|---|---|
 | C1 | `cargo build --release`, then `.\target\release\stopinet.exe install` | "tray icon set to start at every sign-in", "service running", "tray icon started". A shield appears in the notification area, maybe under the ^ arrow (drag it next to the clock to keep it in view). Changes: `stopinet-tray.exe` in `C:\Program Files\stop-internet`, the value `stop-internet` in `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`. Undo: `stopinet uninstall`, or turn off `stopinet-tray` in Task Manager, Startup apps. |
-| C2 | Hover over the icon; `stopinet status` | With Happ connected: a green shield with a check mark, tooltip "Только туннель", "интернет через VPN"; `status` shows `mode: tunnel only, tunnel up`. A click opens the menu with its left edge at the cursor and wholly above the taskbar; with the dark app theme of Windows the menu is dark. |
-| C3 | Disconnect Happ, then connect again | Within about 2 s the shield turns red with a cross, "туннеля нет, интернет закрыт"; after the reconnect it is green again. |
+| C2 | Hover over the icon; `stopinet status` | With Happ connected: a green shield with a check mark, tooltip "Tunnel only", "internet through the VPN"; `status` shows `mode: tunnel only, tunnel up`. A click opens the menu with its left edge at the cursor and wholly above the taskbar; with the dark app theme of Windows the menu is dark. |
+| C3 | Disconnect Happ, then connect again | Within about 2 s the shield turns red with a cross, "no tunnel, internet blocked"; after the reconnect it is green again. |
 | C4 | In an ordinary PowerShell: `& 'C:\Program Files\stop-internet\stopinet.exe' status`, then the same with `mode normal --minutes 1` | `status` shows the mode too: the pipe admits the interactive user. `mode normal` is refused: "normal internet lowers protection: run this from an elevated terminal". The log shows "normal internet refused". Nothing changes. |
-| C5 | Tray menu: Прокси | The round mark moves to Прокси, the shield stays green; the log shows "mode Proxy asked". With Happ in system proxy mode (TUN off) sites load through the proxy, and `stopinet policy --mode proxy` lists "Windows DNS client (svchost.exe, port 53)"; apps that ignore the proxy, for example Telegram without a proxy set, stay blocked. Back: menu, Только туннель. |
-| C6 | Menu: Обычный интернет, На 15 минут; answer **No** in the UAC prompt (program `stopinet-tray.exe`, unknown publisher) | Nothing changes. |
-| C7 | The same, answer **Yes** | The shield turns grey with a dash, tooltip "Защита выключена", "ещё 15 мин"; with Happ disconnected sites load directly. Log: "normal internet for 15 min, asked by an administrator". Back: menu, Только туннель, without a prompt. |
+| C5 | Tray menu: Proxy | The round mark moves to Proxy, the shield stays green; the log shows "mode Proxy asked". With Happ in system proxy mode (TUN off) sites load through the proxy, and `stopinet policy --mode proxy` lists "Windows DNS client (svchost.exe, port 53)"; apps that ignore the proxy, for example Telegram without a proxy set, stay blocked. Back: menu, Tunnel only. |
+| C6 | Menu: Normal internet, For 15 minutes; answer **No** in the UAC prompt (program `stopinet-tray.exe`, unknown publisher) | Nothing changes. |
+| C7 | The same, answer **Yes** | The shield turns grey with a dash, tooltip "Protection off", "15 min left"; with Happ disconnected sites load directly. Log: "normal internet for 15 min, asked by an administrator". Back: menu, Tunnel only, without a prompt. |
 | C8 | Disconnect Happ. In the elevated window: `stopinet mode normal --minutes 1`; start a large download or a video in the browser; wait | After a minute and at most 2 s more the shield turns red, the log shows "normal internet time is up", and the download or video stops: returning to a protected mode cuts direct connections. Connect Happ again. |
-| C9 | Menu: Прокси; sleep, wake up | Still Прокси (log "woke up, mode Proxy"). Then menu: Обычный интернет, До перезагрузки или сна (UAC), sleep and wake up again: log "woke up, mode TunnelOnly", the shield is green or red. |
+| C9 | Menu: Proxy; sleep, wake up | Still Proxy (log "woke up, mode Proxy"). Then menu: Normal internet, Until reboot or sleep (UAC), sleep and wake up again: log "woke up, mode TunnelOnly", the shield is green or red. |
 | C10 | Normal internet until reboot as in C9, then sign out (Start, your name, Sign out) and sign in | The log shows "user logged on, mode TunnelOnly". The tray icon starts by itself after the sign-in. |
 | C11 | Normal internet until reboot, then shut down and power on (Fast Startup) | Tunnel only after the power-on: the log shows a new start of the service or "user logged on, mode TunnelOnly". |
-| C12 | `Stop-Service stopinet`, look at the icon, then `Start-Service stopinet` | While stopped: a red shield, "Служба остановлена", the menu offers only the log and closing. After the start the icon follows the tunnel again within a second or two. |
-| C13 | Menu: Журнал службы; then menu: Закрыть значок | The log opens in Notepad. Closing removes the icon only; `stopinet status` still shows the service running. Start the icon again with Win+R: `"C:\Program Files\stop-internet\stopinet-tray.exe"`. Starting it a second time adds no second icon. |
+| C12 | `Stop-Service stopinet`, look at the icon, then `Start-Service stopinet` | While stopped: a red shield, "Service stopped", the menu offers only the log and closing. After the start the icon follows the tunnel again within a second or two. |
+| C13 | Menu: Service log; then menu: Close icon | The log opens in Notepad. Closing removes the icon only; `stopinet status` still shows the service running. Start the icon again with Win+R: `"C:\Program Files\stop-internet\stopinet-tray.exe"`. Starting it a second time adds no second icon. |
 | C14 | Optional: `stopinet uninstall`, then install again as in C1 | The icon disappears, "tray icon no longer starts at sign-in"; Task Manager no longer lists it under Startup apps. `install` brings back the service, the baseline and the icon. |
 | C15 | Settings, Personalization, Colors: switch "Choose your mode" between Dark and Light, open the tray menu after each switch | The menu follows the app theme: dark, then light. Switch back afterwards. |
 
 ## D. Automatic choice of the mode
 
-"Автоматически" in the tray menu switches between tunnel-only and proxy mode
+"Automatic" in the tray menu switches between tunnel-only and proxy mode
 by itself, following the system proxy of Windows. What Happ sets can be seen
 in Settings, Network & internet, Proxy: in system proxy mode "Use a proxy
 server" is on with a loopback address such as 127.0.0.1. Start with Happ
-connected in TUN mode. Choosing a mode in the menu turns "Автоматически"
+connected in TUN mode. Choosing a mode in the menu turns "Automatic"
 off; turn it on again before the next step.
 
 | # | Do | Expect |
 |---|---|---|
-| D1 | `cargo build --release`, then `.\target\release\stopinet.exe install`; open the tray menu | "Автоматически" has a check mark, the round mark is on "Только туннель", the shield is green. Nothing new is written: the setting appears in `HKCU\Software\stop-internet` only when it changes. |
-| D2 | In Happ, switch to system proxy mode (TUN off) | Within about 2 s the round mark moves to "Прокси", the shield is green, "открыт только прокси клиента"; sites load. Log: "mode Proxy asked". Between TUN off and the proxy on, the shield may turn red for a moment. |
-| D3 | In Happ, switch back to TUN | The mark returns to "Только туннель", the shield is green once the tunnel is up; log: "mode TunnelOnly asked". If the mark stays on "Прокси", Happ keeps the system proxy on in TUN mode as well: harmless, but worth noting. |
-| D4 | In system proxy mode, disconnect Happ; then connect again | "Только туннель", red, sites do not load; after the reconnect "Прокси" again. If the mark stays on "Прокси" after the disconnect, Happ left the system proxy on: still safe, nothing listens on it. |
-| D5 | Happ in system proxy mode. Menu: "Только туннель" | The check mark of "Автоматически" disappears, the mode stays "Только туннель", sites stop loading. In an ordinary PowerShell, `Get-ItemProperty HKCU:\Software\stop-internet` shows `FollowSystemProxy : 0`. Then menu: "Автоматически": the check mark is back, "Прокси" within a second, `FollowSystemProxy : 1`. Undo: `Remove-Item HKCU:\Software\stop-internet` removes the setting, which then counts as on. |
-| D6 | Happ in system proxy mode, "Автоматически" on. In the elevated window: `stopinet mode normal --minutes 1` | The shield stays grey for the whole minute: the tray leaves normal internet alone. Then the log shows "normal internet time is up" and, within about 2 s, "mode Proxy asked"; the shield is green. |
-| D7 | Happ in TUN mode, "Автоматически" on. In the elevated window: `stopinet mode proxy` | Within a second the tray sets "Только туннель" again; the log shows both requests. This is expected while "Автоматически" is on. |
+| D1 | `cargo build --release`, then `.\target\release\stopinet.exe install`; open the tray menu | "Automatic" has a check mark, the round mark is on "Tunnel only", the shield is green. Nothing new is written: the setting appears in `HKCU\Software\stop-internet` only when it changes. |
+| D2 | In Happ, switch to system proxy mode (TUN off) | Within about 2 s the round mark moves to "Proxy", the shield is green, "only the client's proxy is open"; sites load. Log: "mode Proxy asked". Between TUN off and the proxy on, the shield may turn red for a moment. |
+| D3 | In Happ, switch back to TUN | The mark returns to "Tunnel only", the shield is green once the tunnel is up; log: "mode TunnelOnly asked". If the mark stays on "Proxy", Happ keeps the system proxy on in TUN mode as well: harmless, but worth noting. |
+| D4 | In system proxy mode, disconnect Happ; then connect again | "Tunnel only", red, sites do not load; after the reconnect "Proxy" again. If the mark stays on "Proxy" after the disconnect, Happ left the system proxy on: still safe, nothing listens on it. |
+| D5 | Happ in system proxy mode. Menu: "Tunnel only" | The check mark of "Automatic" disappears, the mode stays "Tunnel only", sites stop loading. In an ordinary PowerShell, `Get-ItemProperty HKCU:\Software\stop-internet` shows `FollowSystemProxy : 0`. Then menu: "Automatic": the check mark is back, "Proxy" within a second, `FollowSystemProxy : 1`. Undo: `Remove-Item HKCU:\Software\stop-internet` removes the setting, which then counts as on. |
+| D6 | Happ in system proxy mode, "Automatic" on. In the elevated window: `stopinet mode normal --minutes 1` | The shield stays grey for the whole minute: the tray leaves normal internet alone. Then the log shows "normal internet time is up" and, within about 2 s, "mode Proxy asked"; the shield is green. |
+| D7 | Happ in TUN mode, "Automatic" on. In the elevated window: `stopinet mode proxy` | Within a second the tray sets "Tunnel only" again; the log shows both requests. This is expected while "Automatic" is on. |
 | D8 | Happ in system proxy mode. `Restart-Service stopinet` | The log shows a new start of the service in tunnel-only mode, and within about 2 s "mode Proxy asked". |
-| D9 | Menu: "Закрыть значок", start the icon again as in C13, open the menu | "Автоматически" is as it was. Turn it off, close the icon and start it again: still off. Turn it on at the end. |
+| D9 | Menu: "Close icon", start the icon again as in C13, open the menu | "Automatic" is as it was. Turn it off, close the icon and start it again: still off. Turn it on at the end. |
