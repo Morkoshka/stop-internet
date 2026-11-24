@@ -11,7 +11,7 @@ VPN-клиент или сам stop-internet, трафик остаётся за
 | English | Русский |
 |---|---|
 | [Design](Design): threat model, modes, rules, WFP filters, lifecycle | [Архитектура](Архитектура): модель угроз, режимы, правила, фильтры WFP, жизненный цикл |
-| [Manual tests](Manual-tests): testing the service on a real machine | [Ручные тесты](Ручные-тесты): проверка службы на реальной машине |
+| [Manual tests](Manual-tests): testing on a real machine, leak tests included | [Ручные тесты](Ручные-тесты): проверка на реальной машине, в том числе на утечки |
 | [Recovery](Recovery): what to do when the internet does not work | [Восстановление](Восстановление): что делать, если не работает интернет |
 
 Code, build instructions and the roadmap are in the

@@ -487,11 +487,15 @@ icon stay the job of `stopinet install` and `stopinet uninstall`.
   proxy and picks the mode from it. They run in CI.
 - Anything that installs filters or services is tested manually by the owner
   of the machine, following a written checklist
-  ([`docs/testing.md`](testing.md)): capture traffic on the
-  physical adapter with `pktmon`, read WFP audit events (5157), and go
-  through the scenarios: kill the client and its core, disconnect the tunnel,
-  pull the cable, sleep and wake, reboot, kill the service, IPv6, DNS, UDP and
-  QUIC, an excluded app before and after the tunnel drops.
+  ([`docs/testing.md`](testing.md)): capture what leaves through the
+  physical adapter with `pktmon`
+  ([`tools/leaks.ps1`](../tools/leaks.ps1), which also sends probes like an
+  ordinary program), read WFP audit events (5157,
+  [`tools/blocked.ps1`](../tools/blocked.ps1)), and go through the
+  scenarios: kill the client and its core, disconnect the tunnel, pull the
+  cable, sleep and wake, reboot, kill the service, IPv6, DNS, UDP and QUIC,
+  an excluded app before and after the tunnel drops. A capture of normal
+  internet comes first and proves that the capture sees the wire.
 - New rules are tried with `stopinet trial` first: session filters that
   roll back after a timeout. The service is tested in session-only mode
   before the persistent baseline, and `stopinet panic` is checked right after

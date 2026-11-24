@@ -7,9 +7,9 @@ machine. Unit tests cover the logic; these steps cover what only Windows can
 show. Each step says what it changes, how to undo it and what to expect.
 
 This page covers the Windows service (roadmap step 4), the tray icon with
-mode switching and the automatic choice of the mode (step 5), and the
-installer with the emergency switch-off (step 6). The full checklist with
-traffic captures comes with step 7.
+mode switching and the automatic choice of the mode (step 5), the
+installer with the emergency switch-off (step 6), and captures of what
+leaves through the physical adapter (step 7).
 
 ## Before you start
 
@@ -142,3 +142,64 @@ in Explorer.
 | E9 | Settings, Apps, stop-internet, Uninstall; answer **No** to deleting the configuration | The icon disappears. `Get-Service stopinet` finds nothing, the `netsh wfp` check counts 0, `C:\Program Files\stop-internet` and the Start menu folder are gone, `C:\ProgramData\stop-internet` stays. Sites load with Happ disconnected. |
 | E10 | Run the installer with "Trial mode" on | `stopinet status`: session-only, provider "session". `Stop-Service stopinet` removes every filter, `Start-Service stopinet` brings them back. Then run it again with "Trial mode" off (the wizard remembers the last choice): persistent, as in E2. |
 | E11 | Run the installer with "Start menu folder" off | Everything as in E4, but the Start menu folder "stop-internet" is gone. Win+R: `"C:\Program Files\stop-internet\stopinet-tray.exe" --panic` asks as in E5; answer **No**. Then run the installer again with the folder on (the wizard remembers the last choice): the folder is back. |
+
+## F. Leaks
+
+`tools\leaks.ps1` shows what the computer sent through its physical
+adapter, over the cable or the air. `pktmon`, which comes with Windows,
+records the packets. Traffic inside the tunnel does not show up here: in a
+protected mode only packets to the VPN server, Windows' own packets for the
+local network and the apps from `direct` leave the computer.
+
+While it records, the script tries the network itself every 5 s, like an
+ordinary program that knows nothing of the tunnel or the proxy: TCP 443 and
+a DNS query to 1.1.1.1, a ping to 1.1.1.1, a DNS query to the router and
+TCP 443 to 2606:4700:4700::1111. `-NoProbe` turns this off.
+
+Changes: a `pktmon` capture runs while the script runs. It stops at the
+end, also after Ctrl+C, and its files in `%TEMP%` are deleted. The report
+replaces public addresses with labels PUB-01, PUB-02 and so on, the
+busiest first; the probe addresses are shown as they are. The report is
+safe to share.
+
+Run it from an elevated window, with the `-Seconds` of each step:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\leaks.ps1 -Seconds 60
+```
+
+How to read the report:
+
+- **Sent to the internet**: everything sent to public addresses. In a
+  protected mode it holds only the VPN server (usually PUB-01, program
+  `happd`), other connections of `happd` (to port 5228, for example) and
+  the apps from `direct`. Anything else is a leak.
+- **Sent to the local network**: Windows' own packets are normal here:
+  ARP, DHCP (port 67), DHCPv6 (547), ICMPv6 types 133–137 (neighbor
+  discovery) and 143 (MLD), IGMP. A leak is DNS (port 53) to the router,
+  except in proxy mode without the tunnel, and mDNS (5353), LLMNR (5355),
+  SSDP (1900) and NetBIOS (137, 138): the local network is closed.
+- **Out** and **In**: packets sent and received by this computer. Rows with
+  incoming packets only are not shown.
+- **Programs**: owners of the local port, looked up once a second. Empty
+  means unknown: packets of the kernel, or a program that closed the
+  connection before the lookup.
+- **Probes**: "2 of 12" means 2 attempts out of 12 got somewhere, by any
+  way, through the tunnel for example. A leak is a probe address under
+  "Sent to the internet".
+
+Boot cannot be checked this way: the capture does not survive a reboot.
+B7 checks it.
+
+| # | Do | Expect |
+|---|---|---|
+| F1 | First check the capture itself. Disconnect Happ; tray menu: Normal internet, For 15 minutes (UAC: Yes); `leaks.ps1 -Seconds 30` | The probes to 1.1.1.1 succeed. "Sent to the internet" lists `1.1.1.1 (probe)`: TCP 443, UDP 53 and ICMP type 8, program `powershell`; "Sent to the local network" lists UDP 53 to the router. So the capture sees the wire. If `1.1.1.1` is missing or the report has a WARNING, stop here: the other steps would prove nothing. Back: menu, Tunnel only. |
+| F2 | Tunnel only, Happ connected. `leaks.ps1 -Seconds 60`; meanwhile open a few sites and a YouTube video (QUIC, UDP 443) | The TCP, DNS and ping probes to 1.1.1.1 succeed through the tunnel, "DNS to the router" does not. "Sent to the internet" holds only the VPN server with program `happd` and other connections of `happd`; no `1.1.1.1`. "Sent to the local network" holds only Windows' own packets. |
+| F3 | Disconnect Happ. `leaks.ps1 -Seconds 60`; try to open sites | No probe succeeds. "Sent to the internet" is empty, apart from apps from `direct` if they run. No port 53 under "Sent to the local network". |
+| F4 | Kill the client and its core. Connect Happ; `leaks.ps1 -Seconds 90`; after 20 s, in a second elevated window, `Stop-Process -Name xray -Force`, 20 s later `Stop-Process -Name happd -Force` | A report as in F2: the server and `happd`, no new public addresses. After the second command the tunnel goes away and the shield turns red. If Happ starts them again, the report shows the same program `happd`. Connect Happ again at the end. |
+| F5 | Pull the cable. Happ connected; `leaks.ps1 -Seconds 90`; after 20 s unplug the network cable, plug it back 15 s later | A report as in F2, plus DHCP and ARP after the cable is back: while Happ reconnected, nothing went to public addresses, connectivity checks of Windows (`svchost`, TCP 80 and 443) included. |
+| F6 | Sleep. Happ connected; `leaks.ps1 -Seconds 120`; after 20 s put the computer to sleep, wake it a minute later | After the wake-up the script counts on: time in sleep does not count. A report as in F2, although the probes also ran right after the wake-up, before the tunnel was back. |
+| F7 | The service. Happ disconnected; `leaks.ps1 -Seconds 60`; after 10 s, in a second elevated window, `Stop-Process -Name stopinet-service -Force`; once the service runs again (`stopinet status`), `Stop-Service stopinet` and 10 s later `Start-Service stopinet` | A report as in F3: while the service restarts and while it is stopped, the persistent filters hold. |
+| F8 | IPv6 and Teredo: look at the reports of F2 and F3 | No IPv6 addresses and no port 3544 (Teredo) among the public addresses. Without the tunnel the probe to 2606:4700:4700::1111 fails. |
+| F9 | An excluded app. Connect Happ, start a game from `direct`; `leaks.ps1 -Seconds 120`; after 40 s disconnect Happ and keep playing | The game stays online. "Sent to the internet" lists its servers: before the disconnect with program `happd` (Happ takes its exclusions out of the tunnel itself), after it with the program of the game. Apart from them, only the VPN server. Connect Happ again at the end. |
+| F10 | Proxy. Happ in system proxy mode (TUN off), tray menu: Proxy; `leaks.ps1 -Seconds 60`; open sites | Sites load. "Sent to the internet" holds only the server with program `xray`. DNS from `svchost` to the router, or to the DNS server of the network settings: in this mode system DNS is open on purpose, see the [design](design.md). The probes fail: `powershell` does not use the proxy, and it is not `svchost`. |
