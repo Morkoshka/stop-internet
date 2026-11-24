@@ -72,7 +72,8 @@ machine without stop-internet filters.
 | B5 | Disconnect Happ; run `Resolve-DnsName example.com -DnsOnly` | The name does not resolve and sites do not load while the tunnel is down; an app from `direct` keeps its connections. Connect again: everything works. |
 | B6 | Sleep, wake up | As A6; nothing passes before the tunnel is back. |
 | B7 | Restart Windows, then shut down and power on (Fast Startup) | Before Happ connects nothing loads; after it connects everything works. The log shows a new start of the service and the baseline both times. |
-| B8 | `stopinet uninstall` | "service removed", every filter removed, programs deleted; configuration and log stay in `C:\ProgramData\stop-internet`. |
+| B8 | Disconnect Happ, connect it again; then `Get-Content C:\ProgramData\stop-internet\service.log -Tail 6` | After "tunnel down", one or two lines "mode TunnelOnly, tunnel up: … filters in the session". The last one has as many filters as `stopinet status` shows. If there are two, Happ gave the adapter its address after bringing it up; the second line then follows within a fraction of a second, without waiting for the check every 2 s. |
+| B9 | `stopinet uninstall` | "service removed", every filter removed, programs deleted; configuration and log stay in `C:\ProgramData\stop-internet`. |
 
 ## C. Tray icon and modes
 

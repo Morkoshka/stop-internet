@@ -4,10 +4,11 @@
 //! 2. Install the persistent baseline (unless session-only) and open a
 //!    dynamic WFP session for the session rules.
 //! 3. Serve the named pipe for the tray icon and the CLI.
-//! 4. Follow the tunnel adapter, through interface notifications and a
-//!    periodic check, and the mode chosen by the user, and rebuild the
-//!    session rules when either changes. "Normal internet" ends when its
-//!    time is up, on wake-up and when a user logs on.
+//! 4. Follow the tunnel adapter and its addresses, through notifications
+//!    about interfaces and addresses and a periodic check, and the mode
+//!    chosen by the user, and rebuild the session rules when either
+//!    changes. "Normal internet" ends when its time is up, on wake-up and
+//!    when a user logs on.
 //! 5. On stop, close the pipe and the dynamic session. The baseline keeps
 //!    blocking.
 
@@ -22,13 +23,13 @@ use stopinet_core::policy::{Mode, Policy, Scope, TunnelState};
 use stopinet_core::protocol::{PIPE_NAME, Request, Response, Status};
 use stopinet_win::persistent::install_baseline;
 use stopinet_win::{
-    Caller, Environment, Firewall, InterfaceWatch, PipeServer, Plan, WfpError, observe_tunnel,
+    Caller, Environment, Firewall, NetworkWatch, PipeServer, Plan, WfpError, observe_tunnel,
 };
 
 use crate::log::Log;
 
-/// Safety net for missed interface notifications. It is also how often a
-/// timed "normal internet" is checked, so it may end this much late.
+/// Safety net for missed notifications. It is also how often a timed
+/// "normal internet" is checked, so it may end this much late.
 const CHECK_INTERVAL: Duration = Duration::from_secs(2);
 
 /// How long the pipe server waits for the main loop to carry out a request.
@@ -43,8 +44,9 @@ pub enum Event {
     Wake,
     /// A user logged on.
     Logon,
-    /// An IP interface appeared, disappeared or changed.
-    Interfaces,
+    /// An IP interface or a unicast address appeared, disappeared or
+    /// changed.
+    Network,
     /// A client of the named pipe sent a request.
     Request(Command),
 }
@@ -95,14 +97,14 @@ pub fn run(
         Firewall::attach().map_err(|e| explain(&e))?
     };
 
-    let interface_sender = sender.clone();
-    let watch = match InterfaceWatch::start(move || {
-        let _ = interface_sender.send(Event::Interfaces);
+    let network_sender = sender.clone();
+    let watch = match NetworkWatch::start(move || {
+        let _ = network_sender.send(Event::Network);
     }) {
         Ok(watch) => Some(watch),
         Err(error) => {
             log.write(format_args!(
-                "no interface notifications ({error}), checking every {} s",
+                "no network notifications ({error}), checking every {} s",
                 CHECK_INTERVAL.as_secs()
             ));
             None
@@ -344,7 +346,7 @@ fn next(events: &Receiver<Event>) -> Batch {
             }
             Event::Wake => batch.woke = true,
             Event::Logon => batch.logon = true,
-            Event::Interfaces => {}
+            Event::Network => {}
             Event::Request(command) => batch.commands.push(command),
         }
     }
@@ -387,7 +389,7 @@ mod tests {
     fn a_burst_of_events_is_one_check() {
         let (sender, events) = mpsc::channel();
         for _ in 0..5 {
-            sender.send(Event::Interfaces).unwrap();
+            sender.send(Event::Network).unwrap();
         }
         sender.send(Event::Wake).unwrap();
         let batch = next(&events);
@@ -415,7 +417,7 @@ mod tests {
     #[test]
     fn stop_wins_over_queued_events() {
         let (sender, events) = mpsc::channel();
-        sender.send(Event::Interfaces).unwrap();
+        sender.send(Event::Network).unwrap();
         sender.send(Event::Stop).unwrap();
         sender.send(Event::Wake).unwrap();
         assert!(next(&events).stop);

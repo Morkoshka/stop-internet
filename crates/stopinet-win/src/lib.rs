@@ -1,7 +1,7 @@
 //! Windows integration of stop-internet: the WFP firewall, the persistent
-//! baseline, the tunnel adapter lookup, interface notifications, the named
-//! pipe between the service and its clients, and what the installer does
-//! about the tray icon.
+//! baseline, the tunnel adapter lookup, notifications about interfaces and
+//! their addresses, the named pipe between the service and its clients, and
+//! what the installer does about the tray icon.
 //!
 //! The `unsafe` code of the service and the CLI lives in this crate, in the
 //! [`wfp`], [`adapter`], [`watch`], [`clock`], [`security`], [`pipe`] and
@@ -31,5 +31,5 @@ pub use firewall::{ApplyReport, Firewall};
 pub use persistent::{BaselineReport, Inventory, RemovalReport};
 pub use pipe::{Caller, ClientError, PipeServer};
 pub use plan::{Environment, Plan};
-pub use watch::InterfaceWatch;
+pub use watch::NetworkWatch;
 pub use wfp::{Lifetime, WfpError};

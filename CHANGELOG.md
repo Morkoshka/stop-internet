@@ -16,6 +16,13 @@ becomes the text of its
   also show their name and version in the file properties and in Task
   Manager.
 
+### Changed
+
+- The filter that keeps the tunnel's addresses on the tunnel adapter is in
+  place as soon as the VPN client gives the adapter an address. The service
+  now listens to address changes too, instead of finding a new address on
+  its check every 2 seconds.
+
 ## 0.1.0 - 2026-11-24
 
 The first release.

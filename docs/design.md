@@ -198,9 +198,10 @@ every mode and state.
   and adds the session rules for the current tunnel state. Only then does it
   report "running". If any step fails, it exits with an error code and the
   previous baseline keeps blocking.
-- **Tunnel up or down.** The service listens to interface change
-  notifications (`NotifyIpInterfaceChange`) and rechecks every 2 seconds as a
-  safety net. On a change it rebuilds the session rules. The tunnel is "up"
+- **Tunnel up or down.** The service listens to notifications about
+  interfaces (`NotifyIpInterfaceChange`) and their addresses
+  (`NotifyUnicastIpAddressChange`) and rechecks every 2 seconds as a safety
+  net. On a change it rebuilds the session rules. The tunnel is "up"
   when an adapter with the configured alias and driver exists and is
   operational.
 - **Sleep and wake-up.** On `PBT_APMRESUMEAUTOMATIC`, sent on every wake-up
@@ -492,9 +493,10 @@ icon stay the job of `stopinet install` and `stopinet uninstall`.
   included. It exists only while the tunnel is up; once the service sees
   the tunnel down, the session filters change, and WFP authorizes the open
   connections again, against the baseline. The service reads the addresses
-  of the adapter together with its state, every 2 seconds and on interface
-  changes, so an address that the client assigns a moment after the
-  adapter comes up gets its filter too.
+  of the adapter together with its state, on every change of an interface
+  or an address and every 2 seconds. An address that the client assigns a
+  moment after the adapter comes up changes no interface, but its own
+  notification puts its filter in place at once.
 - **Rust.** Filtering happens in the Windows kernel, so the language does not
   affect network speed. Rust gives a small native service without a runtime
   or garbage collector, memory safety, and typed Windows API bindings from
