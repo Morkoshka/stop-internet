@@ -26,10 +26,13 @@
 
     What changes, only while the script runs: a pktmon capture, and the
     audit of permitted connections (subcategory "Filtering Platform
-    Connection", success), which writes them to the Security log. Both are
-    put back at the end, also after Ctrl+C. The capture files go to a new
-    folder in %TEMP% and are deleted at the end, unless -Keep is given;
-    they contain real addresses.
+    Connection", success), which writes every permitted connection to the
+    Security log, tunnel and loopback included. Both are put back at the
+    end, also after Ctrl+C. On a busy computer the audit can push older
+    entries out of the Security log, which keeps 20 MB by default; with
+    -NoAudit the audit stays as it is, and the programs are only guesses.
+    The capture files go to a new folder in %TEMP% and are deleted at the
+    end, unless -Keep is given; they contain real addresses.
 
     Anonymization as in diag.ps1: public addresses become PUB-01, PUB-02,
     ..., the busiest first. The probe addresses are shown as they are.
@@ -44,6 +47,9 @@
 
 .PARAMETER NoProbe
     Send no test traffic.
+
+.PARAMETER NoAudit
+    Leave the audit setting alone. The programs are only guesses then.
 
 .PARAMETER Keep
     Keep the capture files (capture.pcapng opens in Wireshark) and print
@@ -60,6 +66,7 @@ param(
     [ValidateRange(10, 600)]
     [int]$Seconds = 60,
     [switch]$NoProbe,
+    [switch]$NoAudit,
     [switch]$Keep,
     [string]$Read
 )
@@ -493,10 +500,16 @@ function Get-ConnectionKey([string]$Protocol, [string]$Local, [string]$LocalPort
 }
 
 # Source is the local end and Destination the remote end, in both
-# directions. Returns the number of events.
+# directions. Only connections from the addresses of the physical adapters
+# are read: only they can show up on the wire, while those through the
+# tunnel and over loopback can be tens of thousands. Returns the number of
+# events.
 function Read-Connections([datetime]$Since) {
-    $filter = @{ LogName = 'Security'; Id = 5156; StartTime = $Since }
-    $events = @(Get-WinEvent -FilterHashtable $filter -ErrorAction SilentlyContinue)
+    $sources = @($ownAddresses | Where-Object { $_ } | ForEach-Object { "Data[@Name='SourceAddress']='$_'" })
+    if (-not $sources) { return 0 }
+    $time = $Since.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+    $xpath = "*[System[EventID=5156 and TimeCreated[@SystemTime>='$time']]] and *[EventData[$($sources -join ' or ')]]"
+    $events = @(Get-WinEvent -LogName Security -FilterXPath $xpath -ErrorAction SilentlyContinue)
     if (-not $events) { return 0 }
     # Positions of the fields, by their names in the first event.
     $at = @{}
@@ -504,6 +517,12 @@ function Read-Connections([datetime]$Since) {
     foreach ($field in ([xml]$events[0].ToXml()).Event.EventData.Data) {
         $at[$field.Name] = $i
         $i++
+    }
+    foreach ($name in 'Application', 'Protocol', 'SourceAddress', 'SourcePort', 'DestAddress', 'DestPort') {
+        if (-not $at.ContainsKey($name)) {
+            Write-Host "Connection events have no field $name, so programs are only guesses."
+            return 0
+        }
     }
     foreach ($event in $events) {
         $values = $event.Properties
@@ -585,9 +604,11 @@ try {
         $auditBefore = $null
         $job = $null
         try {
-            $auditBefore = Get-AuditValue
             $since = Get-Date
-            if (-not (Set-AuditValue ($auditBefore -bor 1))) { throw 'auditpol /set failed.' }
+            if (-not $NoAudit) {
+                $auditBefore = Get-AuditValue
+                if (-not (Set-AuditValue ($auditBefore -bor 1))) { throw 'auditpol /set failed.' }
+            }
             Add-OwnAddresses
             $output = pktmon start --capture --comp nics --pkt-size 128 --file-name $etl | Out-String
             if ($LASTEXITCODE -ne 0) {
@@ -630,13 +651,20 @@ try {
             }
         }
 
+        Write-Host 'Converting the capture...'
         pktmon etl2pcap $etl --out $pcap | Out-Null
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $pcap)) {
             throw 'pktmon etl2pcap failed.'
         }
-        $eventCount = Read-Connections $since
+        Add-OwnAddresses
+        $eventCount = 0
+        if (-not $NoAudit) {
+            Write-Host 'Reading connection events...'
+            $eventCount = Read-Connections $since
+        }
     }
     Add-OwnAddresses
+    Write-Host 'Reading the capture...'
 
     $capture = [StopinetLeaks.Pcapng]::Read($pcap, $macs)
 
@@ -710,7 +738,9 @@ try {
         }
         "Not read, not Ethernet (the tunnel adapter can be one of them): $($other -join ', ')."
     }
-    if (-not $Read) {
+    if ($Read -or $NoAudit) {
+        'No connection events: names in [brackets] only owned the local port at some time.'
+    } else {
         "Programs from $eventCount connection events; names in [brackets] only owned the local port at some time."
     }
     if ($capture.Wire -eq 0) {
