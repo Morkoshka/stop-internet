@@ -1,0 +1,80 @@
+name: Release
+
+# A version tag (v0.1.0) builds the programs and the installer from the
+# tagged commit and puts the installer into a draft release, with its
+# SHA-256 checksum and a build provenance attestation. A person publishes
+# the draft after the checks in docs/testing.md, section G.
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      # The draft release.
+      contents: write
+      # The attestation: a signing certificate from Sigstore and its records.
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+
+      - name: Check the tag against Cargo.toml
+        run: |
+          $metadata = cargo metadata --format-version 1 --no-deps --locked | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'cargo metadata failed. Is Cargo.lock up to date?' }
+          $version = ($metadata.packages | Where-Object name -eq 'stopinet-cli').version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "The tag $env:GITHUB_REF_NAME does not match version $version in Cargo.toml."
+          }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # Before the build, so that a missing changelog section stops early.
+      - name: Release notes from the changelogs
+        run: .\tools\release-notes.ps1 -Version $env:VERSION -Out "$env:RUNNER_TEMP\release-notes.md"
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Build release
+        run: cargo build --workspace --release --locked
+
+      # Inno Setup is preinstalled on the Windows runners.
+      - name: Build installer
+        run: .\tools\build-installer.ps1 -SkipBuild
+
+      - name: Checksum
+        working-directory: target/installer
+        run: |
+          $name = "stop-internet-$env:VERSION-setup.exe"
+          $hash = (Get-FileHash -LiteralPath $name -Algorithm SHA256).Hash.ToLowerInvariant()
+          # The format of sha256sum, so that sha256sum -c checks it too.
+          [IO.File]::WriteAllText("$PWD\SHA256SUMS.txt", "$hash  $name`n")
+          Get-Content SHA256SUMS.txt
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: target/installer/stop-internet-${{ env.VERSION }}-setup.exe
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME --draft --verify-tag `
+            --title "stop-internet $env:VERSION" `
+            --notes-file "$env:RUNNER_TEMP\release-notes.md" `
+            "target\installer\stop-internet-$env:VERSION-setup.exe" `
+            target\installer\SHA256SUMS.txt
